@@ -1,0 +1,6 @@
+# Keep LF line endings everywhere so file fingerprints stay stable across machines
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.png binary
+*.jpg binary
+*.pdf binary
