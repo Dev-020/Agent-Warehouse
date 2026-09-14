@@ -68,7 +68,7 @@ Documents carry it at the top of the file. Skills carry it in `SKILL.md`, tools 
 | `status` | yes | `draft`, `canonical` or `deprecated`. | `canonical` |
 | `summary` | yes | One line saying what the item is for. Shown in the catalog. | `How and when agents write session logs.` |
 | `applies-to` | yes | Kinds of project the item fits. Used by the catalog to suggest items. | `[vault, codebase]` |
-| `settings` | yes | Per-project values the item needs: name → description. `{}` if none. | `session_folder: "Folder where session logs live (e.g. AI/session)"` |
+| `settings` | yes | Per-project values the item needs: name → description (required), or name → `{description, default}` (optional). `{}` if none. | `session_folder: "Folder where session logs live (e.g. AI/session)"` |
 | `requires` | yes | Other items this one depends on, with pins. `[]` if none. | `[tool/tex-compile@1]` |
 | `replaces` | yes | ID this item supersedes, or `null`. | `null` |
 | `entrypoint` | tools only | The file to run. | `compile.py` |
@@ -94,10 +94,21 @@ A skill declares the tools it needs in `requires`, using the pin syntax from [[v
 
 - Project-specific values in the body are written as `{{name}}`, e.g. `{{session_folder}}`.
 - Every placeholder used in the body must be declared under `settings`, with a description.
+- A setting is either **required** or has a **default**:
+  ```yaml
+  settings:
+    session_folder: "Folder where session logs live (e.g. AI/session)"   # required
+    log_heading:                                                          # optional
+      description: "Heading used at the top of each log"
+      default: "Session log"
+  ```
+  A project that doesn't set `log_heading` gets `Session log`. Only a setting with no default and no
+  project value is unfilled, and an unfilled setting stops the item from syncing.
 - Each project fills the values in its `.warehouse.yml` under `settings`.
 - Never hard-code a project-specific path, prefix or name in an item. Make it a setting.
 - Tools read settings from the manifest or a project-owned config file. They never hard-code them.
-- Renaming or removing a setting changes the contract (MAJOR, see [[versioning]]).
+- Renaming or removing a setting changes the contract (MAJOR, see [[versioning]]). Adding a required
+  setting is also MAJOR; adding a setting with a default is MINOR.
 
 ## Status lifecycle
 
@@ -171,6 +182,8 @@ Write a log in `{{session_folder}}` at the end of every working session.
 ## Changelog
 
 ### [Unreleased]
+#### Added
+- Settings may declare a default value: {description, default}.
 
 ### [0.1.0] - 2026-09-14
 #### Added

@@ -27,7 +27,7 @@ contract changed.
 | architecture | the setup and roles it defines |
 | skill | its steps, and the tools it requires |
 | tool | its commands, arguments, output and behaviour |
-| any item | setting names and `{{placeholders}}` |
+| any item | setting names, which settings are required, and `{{placeholders}}` |
 
 ## Bumps
 
@@ -42,7 +42,7 @@ contract changed.
 | Bump | Document (`convention/backlog`) | Skill (`skill/latex-pdf`) | Tool (`tool/backlog-cli`) |
 |---|---|---|---|
 | **MAJOR** | A required field is renamed from `prio` to `priority`. | Now requires `tool/tex-compile@2`; setting `tex_root` renamed to `source_folder`. | `add` command renamed to `new`; output switches from text to JSON. |
-| **MINOR** | New optional `tags` field. | New optional step for bibliographies. | New `--json` flag; existing output unchanged. |
+| **MINOR** | New optional `tags` field. | New optional step for bibliographies; new setting `bib_style` with a default. | New `--json` flag; existing output unchanged. |
 | **PATCH** | Typo fixed; example clarified; broken link fixed. | Instruction reworded, same steps. | Bug fix: crash on empty backlog. |
 
 ## Rules
@@ -96,7 +96,7 @@ Answer in order. Stop at the first **yes**.
 1. Is this the item's first release as canonical? → **`1.0.0`**
 2. Would any project using the current version have to change something to keep working? → **MAJOR**
 3. Did you rename or remove a setting, placeholder, required field, step, command, argument or
-   output? → **MAJOR**
+   output, or add a setting **without** a default? → **MAJOR**
 4. Does a skill now need a new MAJOR of a tool? → **MAJOR**
 5. Did you add something optional (section, setting with a default, command, flag, field)? → **MINOR**
 6. Is it a fix, typo, wording change, link fix or bug fix that keeps the meaning and behaviour? → **PATCH**
@@ -105,6 +105,8 @@ Answer in order. Stop at the first **yes**.
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- Adding a setting with a default is MINOR; adding a required setting (no default) is MAJOR.
 
 ### [0.1.0] - 2026-09-14
 #### Added

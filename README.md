@@ -101,9 +101,10 @@ Details: [[changelog]].
 
 ## Status
 
-**Phase 1 of 5: Foundation.** Folders exist, old notes are sorted into `architecture/`, `reference/`
-and `_archive/`, and the three standards are drafted as items in `conventions/`. No items are
-released yet and nothing syncs.
+**Phase 2 of 5: The tool.** Batch 1 of `_tools/warehouse.py` is built and under review; batch 2
+(`promote`, `discard`, `detach`, `template`, `bootstrap`) is next. The three standards are drafted as
+items in `conventions/`. Old notes live in `reference/` (legacy architecture notes in
+`reference/legacy-architecture/`) and `_archive/`. No items are released yet and nothing syncs.
 
 | Phase | What |
 |---|---|

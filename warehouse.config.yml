@@ -1,0 +1,26 @@
+# Warehouse tool configuration (see _tools/DESIGN.md §2.1).
+# Per-machine overrides of project_roots / max_depth go in warehouse.config.local.yml (gitignored).
+config_version: 1
+project_roots:
+  - C:/projects/vaults
+  - C:/projects/code
+max_depth: 4                  # directory levels below a root searched for .warehouse.yml
+skip_dirs:                    # directory NAMES never descended into (case-insensitive)
+  - .git
+  - node_modules
+  - .claude                   # covers .claude/worktrees
+  - .venv
+  - venv
+  - __pycache__
+  - .pytest_cache
+  - .obsidian
+  - .trash
+  - dist
+  - build
+  - worktrees
+sync_exclude:                 # glob patterns (relative to item folder) never copied
+  - "tests/**"                # tools only (always applied to tools even if removed here)
+  - "**/desktop.ini"
+  - "**/.gitkeep"
+  - "**/__pycache__/**"
+  - "**/*.pyc"
