@@ -150,5 +150,6 @@ an appendix register may be added below the Icebox:
 
 ### [Unreleased]
 
+### [0.1.0] - 2026-09-15
 #### Added
 - Initial draft of the standardized backlog convention.
