@@ -182,6 +182,8 @@ Write a log in `{{session_folder}}` at the end of every working session.
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.0] - 2026-09-15
 #### Added
 - Initial draft of the warehouse item format.
 - Settings may declare a default value: {description, default}.
