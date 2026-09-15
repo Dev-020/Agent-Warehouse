@@ -7,7 +7,7 @@ import sys
 
 from . import TOOL_VERSION
 from .commands import (add, check, impact, index_cmd, install_hook, pull, registry_cmd, release,
-                       remove, status, sync, promote, discard, detach, template, bootstrap)
+                       remove, status, sync, promote, discard, detach, template, bootstrap, profile)
 from .context import Context
 from .errors import WarehouseError
 
@@ -96,6 +96,35 @@ def build_parser() -> argparse.ArgumentParser:
     p = cmd("bootstrap", bootstrap.run, "create a .warehouse.yml for an existing project")
     p.add_argument("--write", action="store_true")
     p.add_argument("--include-drafts", action="store_true")
+    p.add_argument("--profile", default="starter", help="profile to bootstrap with (default: starter, or 'all')")
+
+    p = cmd("profile", profile.run, "manage profiles (loadouts)")
+    prof_sub = p.add_subparsers(dest="profile_action", required=True)
+
+    p_list = prof_sub.add_parser("list", help="list available profiles")
+    _globals(p_list, suppress=True)
+
+    p_show = prof_sub.add_parser("show", help="show profile details")
+    _globals(p_show, suppress=True)
+    p_show.add_argument("name", help="profile name")
+
+    p_save = prof_sub.add_parser("save", help="save or update a profile")
+    _globals(p_save, suppress=True)
+    p_save.add_argument("name", help="profile name")
+    p_save.add_argument("--description", help="profile description")
+    p_save.add_argument("--tier", type=int, help="tier (0-3)")
+    p_save.add_argument("--items", help="comma-separated list of items (id[@pin])")
+    p_save.add_argument("--applies-to", dest="applies_to", help="comma-separated targets (e.g. vault,codebase)")
+    p_save.add_argument("--from-manifest", action="store_true", help="load items and settings from current project's .warehouse.yml")
+
+    p_del = prof_sub.add_parser("delete", help="delete a profile")
+    _globals(p_del, suppress=True)
+    p_del.add_argument("name", help="profile name")
+    p_del.add_argument("--yes", action="store_true", help="confirm deletion without prompt")
+
+    p_app = prof_sub.add_parser("apply", help="apply a profile to the current project manifest")
+    _globals(p_app, suppress=True)
+    p_app.add_argument("name", help="profile name")
 
     return parser
 

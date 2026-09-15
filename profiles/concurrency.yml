@@ -1,0 +1,17 @@
+name: concurrency
+description: "Multi-agent and swarm coordination (Tier 2). Adds git worktree claims, CLI backlog automation, governance skill, and Codebuff swarm roles."
+tier: 2
+applies-to: [vault, codebase]
+items:
+  - protocol/agent-protocol@0.1
+  - protocol/working-memory@0.1
+  - convention/commits@0.1
+  - convention/backlog@0.1
+  - protocol/session-log@0.1
+  - protocol/safe-write@0.1
+  - protocol/worktree-claims@0.1
+  - tool/backlog-cli@0.1
+  - skill/backlog-governance@0.1
+  - architecture/codebuff-orchestration@0.1
+settings:
+  backlog_file: "BACKLOG.md"

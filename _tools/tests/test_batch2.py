@@ -36,7 +36,7 @@ def test_bootstrap_codebase(wh):
     wh.commit("modify protocol/p")
     subprocess.run(["git", "-C", str(wh.root), "tag", "-f", "-a", "protocol/p@1.0.0", "-m", "1.0.0"], check=True)
     
-    code, out = wh.run("bootstrap", project=p)
+    code, out = wh.run("bootstrap", "--profile", "all", project=p)
     assert code == 0
     assert "auto_sync: true" in out
     assert "target: warehouse/" in out
@@ -44,7 +44,7 @@ def test_bootstrap_codebase(wh):
     assert "protocol/p" not in out
     
     (p / ".warehouse.yml").unlink()
-    code, out = wh.run("bootstrap", "--write", project=p)
+    code, out = wh.run("bootstrap", "--profile", "all", "--write", project=p)
     assert code == 0
     assert (p / ".warehouse.yml").exists()
     assert "tool/t@1" in (p / ".warehouse.yml").read_text()

@@ -1,0 +1,8 @@
+name: starter
+description: "Minimal viable operating posture (Tier 0). Prevents hallucination and reckless writes with zero token bloat."
+tier: 0
+applies-to: [vault, codebase]
+items:
+  - protocol/agent-protocol@0.1
+  - protocol/working-memory@0.1
+settings: {}

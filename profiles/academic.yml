@@ -1,0 +1,10 @@
+name: academic
+description: "Academic notes and LaTeX compilation (Tier 3). Adds Tectonic LaTeX compiler tool and publication authoring skill."
+tier: 3
+applies-to: [vault]
+items:
+  - protocol/agent-protocol@0.1
+  - protocol/working-memory@0.1
+  - tool/tex-compile@0.1
+  - skill/latex-pdf@0.1
+settings: {}
