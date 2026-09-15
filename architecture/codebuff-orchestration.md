@@ -120,6 +120,7 @@ The original Codebuff framework introduced 7 distinct roles. Empirical testing r
 
 ### [Unreleased]
 
+### [0.1.0] - 2026-09-15
 #### Added
 - Initial draft of the distilled Codebuff orchestration architecture.
 - Multi-agent cost scaling curves and empirical token consumption analysis.
