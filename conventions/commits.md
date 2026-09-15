@@ -123,5 +123,6 @@ Following any change in a repository, agents must follow this structured lifecyc
 
 ### [Unreleased]
 
+### [0.1.0] - 2026-09-15
 #### Added
 - Initial draft of the git commit and post-change workflow convention.
