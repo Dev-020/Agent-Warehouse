@@ -6,8 +6,8 @@ import json
 import sys
 
 from . import TOOL_VERSION
-from .commands import (add, batch2, check, impact, index_cmd, install_hook, pull, registry_cmd, release,
-                       remove, status, sync)
+from .commands import (add, check, impact, index_cmd, install_hook, pull, registry_cmd, release,
+                       remove, status, sync, promote, discard, detach, template, bootstrap)
 from .context import Context
 from .errors import WarehouseError
 
@@ -73,9 +73,30 @@ def build_parser() -> argparse.ArgumentParser:
     p = cmd("install-hook", install_hook.run, "install the warehouse post-commit and post-merge hooks")
     p.add_argument("--force", action="store_true")
 
-    for name in ("promote", "discard", "detach", "template", "bootstrap"):
-        p = cmd(name, batch2.make(name), "not implemented (batch 2)")
-        p.add_argument("rest", nargs=argparse.REMAINDER)
+    p = cmd("promote", promote.run, "promote a drifted item back to the warehouse")
+    p.add_argument("id")
+    p.add_argument("--message")
+    p.add_argument("--include-new", action="store_true")
+    p.add_argument("--write-conflicts", action="store_true")
+
+    p = cmd("discard", discard.run, "discard local drift or promoted state")
+    p.add_argument("id")
+    p.add_argument("--yes", action="store_true")
+    p.add_argument("--pull", action="store_true")
+
+    p = cmd("detach", detach.run, "remove an item from manifest/lock but keep it in the project")
+    p.add_argument("id")
+    p.add_argument("--force", action="store_true")
+
+    p = cmd("template", template.run, "copy a template into the project")
+    p.add_argument("id")
+    p.add_argument("dest")
+    p.add_argument("--set", action="append", default=[], help="name=value")
+
+    p = cmd("bootstrap", bootstrap.run, "create a .warehouse.yml for an existing project")
+    p.add_argument("--write", action="store_true")
+    p.add_argument("--include-drafts", action="store_true")
+
     return parser
 
 

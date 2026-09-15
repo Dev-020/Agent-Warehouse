@@ -119,3 +119,15 @@ class Git:
 
     def tag(self, name: str, message: str) -> None:
         self.run("tag", "-a", name, "-m", message)
+
+    def merge_file(self, ours: bytes, base: bytes, theirs: bytes) -> tuple[bytes, int]:
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            p_ours = Path(td) / "ours"
+            p_base = Path(td) / "base"
+            p_theirs = Path(td) / "theirs"
+            p_ours.write_bytes(ours)
+            p_base.write_bytes(base)
+            p_theirs.write_bytes(theirs)
+            cp = self.run("merge-file", "-p", "--diff3", str(p_ours), str(p_base), str(p_theirs), check=False)
+            return cp.stdout, cp.returncode

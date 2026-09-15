@@ -89,12 +89,6 @@ def test_registry_generated(wh):
     assert git(wh.root, "status", "--porcelain", "-uall").strip() == "?? _registry/projects.md"
 
 
-@pytest.mark.parametrize("name", ["promote", "discard", "detach", "template", "bootstrap"])
-def test_batch2_commands_are_stubs(wh, name):
-    code, out = wh.run(name, "protocol/x")
-    assert code != 0 and "not implemented (batch 2)" in out
-
-
 def test_real_config_file_is_valid():
     cfg = config_mod.load(TOOLS_DIR.parent)
     roots = [r.as_posix().lower() for r in cfg.project_roots]

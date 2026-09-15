@@ -182,3 +182,44 @@ def release_edit(text: str, new: Version, today: str, *, is_document: bool) -> s
     if not result.endswith("\n"):
         result += "\n"
     return result
+
+def append_changed(text: str, msg: str, is_document: bool) -> str:
+    sections = parse(text, is_document=is_document)
+    unrel = unreleased(sections)
+    lines = text.split("\n")
+    
+    top, ver, cat_level = _levels(is_document)
+    cat_heading = "#" * cat_level + " Changed"
+    
+    body = lines[unrel.start + 1:unrel.end]
+    cat_idx = None
+    in_fence = False
+    for i, line in enumerate(body):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+        if not in_fence and line.rstrip() == cat_heading:
+            cat_idx = i
+            break
+            
+    if cat_idx is not None:
+        insert_idx = len(body)
+        for i in range(cat_idx + 1, len(body)):
+            if not in_fence and body[i].startswith("#" * cat_level + " "):
+                insert_idx = i
+                break
+            if _FENCE_RE.match(body[i]):
+                in_fence = not in_fence
+        while insert_idx > cat_idx + 1 and not body[insert_idx - 1].strip():
+            insert_idx -= 1
+        body.insert(insert_idx, msg)
+    else:
+        while body and not body[-1].strip():
+            body.pop()
+        if body:
+            body.append("")
+        body.append(cat_heading)
+        body.append(msg)
+        body.append("")
+        
+    out = lines[:unrel.start + 1] + body + lines[unrel.end:]
+    return "\n".join(out)
