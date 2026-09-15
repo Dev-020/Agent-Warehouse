@@ -127,5 +127,6 @@ Multiple agents, human collaborators, or background processes frequently operate
 
 ### [Unreleased]
 
+### [0.1.0] - 2026-09-15
 #### Added
 - Initial draft of the canonical agent operating protocol.
