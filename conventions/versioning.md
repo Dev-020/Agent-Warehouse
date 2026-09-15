@@ -105,9 +105,7 @@ Answer in order. Stop at the first **yes**.
 ## Changelog
 
 ### [Unreleased]
-#### Changed
-- Adding a setting with a default is MINOR; adding a required setting (no default) is MAJOR.
-
-### [0.1.0] - 2026-09-14
 #### Added
 - Initial draft of the versioning convention.
+#### Changed
+- Adding a setting with a default is MINOR; adding a required setting (no default) is MAJOR.

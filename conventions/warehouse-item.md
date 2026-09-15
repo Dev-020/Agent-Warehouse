@@ -183,8 +183,5 @@ Write a log in `{{session_folder}}` at the end of every working session.
 
 ### [Unreleased]
 #### Added
-- Settings may declare a default value: {description, default}.
-
-### [0.1.0] - 2026-09-14
-#### Added
 - Initial draft of the warehouse item format.
+- Settings may declare a default value: {description, default}.
