@@ -12,6 +12,7 @@ It is an Obsidian vault and a git repo (private remote on GitHub).
 AI/
 ├── 00_INDEX.md          catalog: every item, version, summary, what projects it fits
 ├── README.md            this file
+├── QUICKSTART.md        step-by-step onboarding guide for projects
 ├── AGENTS.md / CLAUDE.md  rules for agents working on the warehouse itself
 │
 ├── architecture/        system designs (Codebuff foundation, multi-agent setups)
@@ -20,10 +21,11 @@ AI/
 ├── templates/           starting points, copied once
 ├── skills/              <name>/SKILL.md + private helper scripts/assets + CHANGELOG.md
 ├── tools/               <name>/TOOL.md + code + tests/ + CHANGELOG.md
+├── profiles/            curated loadouts for progressive context disclosure
 ├── case-studies/        project-specific workflows kept as reference, never synced
 ├── reference/           research and audits, never synced
 │
-├── _tools/warehouse.py  the sync tool (Phase 2 — not built yet)
+├── _tools/warehouse.py  the sync and governance CLI tool
 ├── _registry/projects.md  GENERATED: which projects use which items at which version
 └── _archive/            retired items and old notes
 ```
@@ -44,6 +46,8 @@ AI/
 Every item's format is defined in [[warehouse-item]].
 
 ## How a project uses it
+
+See [[QUICKSTART]] for a 3-minute, step-by-step onboarding walkthrough.
 
 1. **Manifest.** The project has a `.warehouse.yml` at its root, which the project commits:
    ```yaml
@@ -103,15 +107,17 @@ See [[cli-reference]] in `reference/` for the complete reference manual with arg
 
 ## Status
 
-**Phase 4 of 5: Pilot projects.** The tool `_tools/warehouse.py` is fully implemented and tested (146 tests passing). All 18 initial catalog items are drafted, reconciled, and released at `0.1.0`. Pilot projects (`doc-scanner`, `GRIP`, `COLLEGE`) are onboarded via progressive disclosure profiles.
+**Phases 1–4 Complete. Operational Phase: On-Demand Adoption.** 
+The tool `_tools/warehouse.py` is fully implemented and tested (146 tests passing). All 18 initial catalog items are drafted, reconciled, and released at `0.1.0`. Pilot projects (`doc-scanner`, `GRIP`, `COLLEGE`) are onboarded and verified. Centralized push rollout (former Phase 5) was superseded by decentralized on-demand adoption to eliminate instruction bloat and preserve project context sovereignty.
 
 | Phase | What | Status |
 |---|---|---|
 | 1. Foundation | Repo, folders, conventions, standards | Complete |
 | 2. The tool | `_tools/warehouse.py` (Batches 1 & 2 + Profiles) and test suite | Complete |
 | 3. First items | 18 catalog items drafted, reviewed, released at `0.1.0` | Complete |
-| 4. Pilot projects | doc-scanner, GRIP, COLLEGE onboarded & verified ← **now** | In Progress |
-| 5. Roll out | Remaining projects, one at a time | Upcoming |
+| 4. Pilot projects | doc-scanner, GRIP, COLLEGE onboarded & verified | Complete |
+| 5. Fleet Adoption | Decentralized on-demand adoption via project agents (Pull vs Push) | Active / Ongoing |
 
-Full plan: [[warehouse-architecture]]. Catalog: [[00_INDEX]]. Command Reference: [[cli-reference]].
+Full plan: [[warehouse-architecture]]. Catalog: [[00_INDEX]]. Command Reference: [[cli-reference]]. Quickstart: [[QUICKSTART]].
+
 

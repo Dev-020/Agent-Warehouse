@@ -50,6 +50,7 @@ business. Do not add items or notes about it.
 
 ## Housekeeping
 
+- **Agent Workflow**: Agents working on the warehouse should run `warehouse inbox list` (or check `_inbox/`) at the start of a session to identify open requests/issues, and use `warehouse inbox triage <ticket_id>` to move them to the backlog.
 - **No secrets** in the warehouse: no tokens, keys, passwords or personal credentials, in items,
   settings examples or notes.
 - **Keep `00_INDEX.md` current** when you add, release, deprecate or archive an item. It is maintained

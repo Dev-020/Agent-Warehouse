@@ -54,6 +54,7 @@ See [[cli-reference]] in `reference/` for the complete reference guide and optio
 | `install-hook [--force]` | 1 | built |
 | `promote`, `discard`, `detach`, `template`, `bootstrap` | 2 | built |
 | `profile <list\|show\|save\|delete\|apply>` | 2+ | built |
+| `request`, `issue`, `inbox <list\|show\|resolve\|reject\|triage>` | 2+ | built |
 
 `index` needs the `<!-- warehouse:catalog:start/end -->` and `<!-- warehouse:releases:start/end -->`
 markers in `00_INDEX.md` (so does `release`, which regenerates the index).

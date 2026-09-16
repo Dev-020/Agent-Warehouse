@@ -7,7 +7,8 @@ import sys
 
 from . import TOOL_VERSION
 from .commands import (add, check, impact, index_cmd, install_hook, pull, registry_cmd, release,
-                       remove, status, sync, promote, discard, detach, template, bootstrap, profile)
+                       remove, status, sync, promote, discard, detach, template, bootstrap, profile,
+                       request, issue, inbox_cmd)
 from .context import Context
 from .errors import WarehouseError
 
@@ -125,6 +126,45 @@ def build_parser() -> argparse.ArgumentParser:
     p_app = prof_sub.add_parser("apply", help="apply a profile to the current project manifest")
     _globals(p_app, suppress=True)
     p_app.add_argument("name", help="profile name")
+
+    # Inbox Commands
+    p = cmd("request", request.run, "file a request to the warehouse")
+    p.add_argument("summary")
+    p.add_argument("--reason")
+    p.add_argument("--priority", choices=["P1", "P2", "P3"], default="P2")
+
+    p = cmd("issue", issue.run, "file an issue against a warehouse item")
+    p.add_argument("item_id")
+    p.add_argument("--summary", required=True)
+    p.add_argument("--type", choices=["typo", "bug", "inconsistency", "enhancement"], default="bug")
+    p.add_argument("--details")
+    p.add_argument("--priority", choices=["P1", "P2", "P3"], default="P2")
+
+    p = cmd("inbox", inbox_cmd.run, "manage warehouse inbox")
+    inbox_sub = p.add_subparsers(dest="inbox_action", required=True)
+
+    p_inbox_list = inbox_sub.add_parser("list", help="list inbox tickets")
+    _globals(p_inbox_list, suppress=True)
+    p_inbox_list.add_argument("--status", choices=["open", "triaged", "resolved", "rejected", "all"])
+    p_inbox_list.add_argument("--type", choices=["request", "issue"])
+
+    p_inbox_show = inbox_sub.add_parser("show", help="show ticket details")
+    _globals(p_inbox_show, suppress=True)
+    p_inbox_show.add_argument("ticket_id")
+
+    p_inbox_resolve = inbox_sub.add_parser("resolve", help="resolve a ticket")
+    _globals(p_inbox_resolve, suppress=True)
+    p_inbox_resolve.add_argument("ticket_id")
+    p_inbox_resolve.add_argument("--message")
+
+    p_inbox_reject = inbox_sub.add_parser("reject", help="reject a ticket")
+    _globals(p_inbox_reject, suppress=True)
+    p_inbox_reject.add_argument("ticket_id")
+    p_inbox_reject.add_argument("--reason")
+
+    p_inbox_triage = inbox_sub.add_parser("triage", help="triage a ticket to the backlog")
+    _globals(p_inbox_triage, suppress=True)
+    p_inbox_triage.add_argument("ticket_id")
 
     return parser
 
