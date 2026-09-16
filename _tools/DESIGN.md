@@ -774,18 +774,28 @@ different and no `--force` → exit 2 (nothing written); `--force` backs up to `
 
 ```sh
 #!/bin/sh
-# warehouse post-commit hook v1 — installed by `warehouse install-hook`
-[ -n "$WAREHOUSE_RELEASING" ] && exit 0
+# warehouse post-commit hook v2 — installed by `warehouse install-hook`
 root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
-mkdir -p "$root/_tools/.state"
+mkdir -p "$root/_tools/.state" 2>/dev/null
+log="$root/_tools/.state/hook.log"
+stamp() { date '+%Y-%m-%dT%H:%M:%S' 2>/dev/null; }
+if [ -n "$WAREHOUSE_RELEASING" ]; then
+  echo "$(stamp) post-commit: skipped (release in progress; release runs its own sync)" >>"$log" 2>/dev/null
+  exit 0
+fi
 if command -v python >/dev/null 2>&1; then py=python
 elif command -v python3 >/dev/null 2>&1; then py=python3
-else exit 0; fi
-"$py" "$root/_tools/warehouse.py" sync --auto --if-new-tags >>"$root/_tools/.state/hook.log" 2>&1 || true
+else
+  echo "$(stamp) post-commit: skipped (python not found)" >>"$log" 2>/dev/null
+  exit 0
+fi
+echo "$(stamp) post-commit: sync --auto --if-new-tags" >>"$log" 2>/dev/null
+"$py" "$root/_tools/warehouse.py" sync --auto --if-new-tags >>"$log" 2>&1
+echo "$(stamp) post-commit: done (exit $?)" >>"$log" 2>/dev/null
 exit 0
 ```
-No loop: sync never commits. Cannot fail the commit (post-commit status is ignored; always `exit 0`). Fast when
+Every run appends timestamped lines to `_tools/.state/hook.log` (start, skip reason, or `done (exit N)`) so an idle run is distinguishable from a hook that never ran (added 2026-09-17). No loop: sync never commits. Cannot fail the commit (post-commit status is ignored; always `exit 0`). Fast when
 no tags changed (one `for-each-ref`). Covers tags created by hand or fetched before a commit.
 
 `_tools/hooks/post-merge` is the same script (header says `post-merge`). It runs after `git pull`/`git merge`

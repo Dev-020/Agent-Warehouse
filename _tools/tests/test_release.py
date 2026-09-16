@@ -1,6 +1,8 @@
 """release (DESIGN §4.8) and hooks (§4.13, §4.14, User decision 5)."""
 from __future__ import annotations
 
+import re
+
 import json
 import shutil
 import time
@@ -108,7 +110,9 @@ def test_release_initial_for_phase1_items(wh):
             path.write_text(re.sub(r"(### \[Unreleased\]\n)(?:#.*\n|- .*\n)+", r"\1", text), encoding="utf-8")
         code, out = wh.run("release", f"convention/{name}", "initial", "--no-sync")
         assert code == 0, out
-    assert {f"convention/{n}@0.1.0" for n in names} <= set(tags(wh))
+    versions = {n: re.search(r"^version: (\S+)$", (wh.root / "conventions" / f"{n}.md").read_text(encoding="utf-8"), re.M).group(1)
+                for n in names}
+    assert {f"convention/{n}@{v}" for n, v in versions.items()} <= set(tags(wh))
     code, out = wh.run("release", "convention/versioning", "initial", "--no-sync")
     assert code == 5 and "already has releases" in out
 
@@ -136,7 +140,9 @@ def test_release_triggers_sync_and_hook_noops(wh):
     assert wh.lock(p)["items"][DOC]["version"] == "1.1.0"
     assert not (manual / ".warehouse.lock").exists()
     state = wh.root / "_tools" / ".state"
-    assert not (state / "hook.log").exists() or (state / "hook.log").read_text() == ""
+    log = (state / "hook.log").read_text() if (state / "hook.log").exists() else ""
+    assert "sync --auto" not in log  # the hook skipped; release ran its own sync
+    assert all("skipped (release in progress" in line for line in log.splitlines()), log
     digest = json.loads((state / "auto-sync.json").read_text())["tags_digest"]
     from warehouse_core.catalog import Catalog
     from warehouse_core.gitrepo import Git
@@ -189,7 +195,8 @@ def test_shipped_hooks_present_and_safe():
     for name in ("post-commit", "post-merge"):
         text = (TOOLS_DIR / "hooks" / name).read_text()
         assert text.startswith("#!/bin/sh\n")
-        assert '[ -n "$WAREHOUSE_RELEASING" ] && exit 0' in text
+        assert 'if [ -n "$WAREHOUSE_RELEASING" ]; then' in text
+        assert 'done (exit $?)' in text
         assert "unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX" in text
         assert "sync --auto --if-new-tags" in text and text.rstrip().endswith("exit 0")
 
@@ -216,6 +223,10 @@ def test_hook_script_manual_tag_then_commit_syncs(wh):
     lock = wh.lock(p)
     assert lock["items"][DOC]["version"] == "1.1.0", _hook_log(wh)
     assert "Tagged by hand." in (p / "warehouse" / "session-log.md").read_text()
+    log = _hook_log(wh)
+    assert re.search(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d post-commit: sync --auto --if-new-tags$", log, re.M), log
+    assert re.search(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d post-commit: done \(exit 0\)$", log, re.M), log
+    assert "post-commit: skipped (release in progress" in log  # publish() commits with WAREHOUSE_RELEASING
 
 
 def test_post_merge_hook_syncs_new_tags(wh):
