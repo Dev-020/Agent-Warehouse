@@ -1,6 +1,6 @@
 ---
 id: convention/versioning
-version: 0.1.0
+version: 0.1.1
 status: draft
 summary: Semantic Versioning rules for warehouse items — contract, bumps, pins and auto-sync.
 applies-to: [warehouse]
@@ -79,8 +79,6 @@ versions, **MINOR is treated as MAJOR**:
 
 ## Auto-sync policy
 
-> The sync tool is Phase 2 and not built yet. This is how it will behave.
-
 - **`auto_sync: true`** (the default): MINOR and PATCH releases within the pin are written to the
   project automatically after a warehouse release.
 - **`auto_sync: false`**: nothing is written automatically. The project runs `warehouse pull <id>` or
@@ -105,6 +103,10 @@ Answer in order. Stop at the first **yes**.
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.1] - 2026-09-16
+#### Fixed
+- Removed the outdated note that the sync tool is not built yet.
 
 ### [0.1.0] - 2026-09-15
 #### Added
