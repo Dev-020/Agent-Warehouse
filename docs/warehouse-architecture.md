@@ -102,7 +102,7 @@ canonical version, which starts at `1.0.0`.
 | backlog-governance | skill | minecraft/dnd skill, rewritten to match the backlog convention (requires tool/backlog-cli) |
 | tex-compile | tool | COLLEGE LaTeX workflow (Tectonic), turned into a script |
 | backlog-cli | tool | FACTORIO `_tools/task.py`, generalized (prefixes and paths move to settings) |
-| protocol-drift-check | tool | discord-bot `scripts/check-protocol-drift.ps1`, generalized |
+| protocol-drift-check | tool | discord-bot `scripts/check-protocol-drift.ps1`, generalized. **Deferred 2026-09-16** until use cases from several projects are found (`warehouse check` already covers drift of synced copies). |
 
 ---
 
