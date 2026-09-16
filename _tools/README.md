@@ -41,6 +41,8 @@ projects. The suite takes a few minutes on Windows (it runs many real git comman
 
 ## Commands
 
+See [[cli-reference]] in `reference/` for the complete reference guide and option breakdown.
+
 | Command | Batch | Status |
 |---|---|---|
 | `sync [--auto] [--if-new-tags] [--include-manual] [project]` | 1 | built |
@@ -50,7 +52,8 @@ projects. The suite takes a few minutes on Windows (it runs many real git comman
 | `release <id> <major\|minor\|patch\|initial> [--no-sync]` | 1 | built |
 | `check`, `impact <id>`, `registry`, `index` | 1 | built |
 | `install-hook [--force]` | 1 | built |
-| `promote`, `discard`, `detach`, `template`, `bootstrap` | 2 | not built: exits 2 with "not implemented (batch 2)" |
+| `promote`, `discard`, `detach`, `template`, `bootstrap` | 2 | built |
+| `profile <list\|show\|save\|delete\|apply>` | 2+ | built |
 
 `index` needs the `<!-- warehouse:catalog:start/end -->` and `<!-- warehouse:releases:start/end -->`
 markers in `00_INDEX.md` (so does `release`, which regenerates the index).

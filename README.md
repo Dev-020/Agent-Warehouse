@@ -82,36 +82,36 @@ Details: [[changelog]].
 
 ## Commands
 
-> **Phase 2 — not built yet.** `_tools/warehouse.py` does not exist. This is the planned command set.
+See [[cli-reference]] in `reference/` for the complete reference manual with argument breakdowns and usage examples.
 
 | Command | Purpose |
 |---|---|
+| `warehouse bootstrap [--profile <name>] [--write]` | Propose or write an initial manifest using a profile loadout |
 | `warehouse sync [--auto] [project]` | Propagate releases to projects |
 | `warehouse status` | Current vs available versions for this project, with changelog entries |
 | `warehouse pull <id> \| --all [--major]` | Manual update; `--major` required for MAJOR |
 | `warehouse add <id>[@pin]` / `remove <id>` | Change the manifest, then pull or delete (incl. required tools) |
+| `warehouse profile <list\|show\|save\|delete\|apply>` | Manage progressive context disclosure loadouts/profiles |
 | `warehouse template <id> <dest>` | One-time template copy |
-| `warehouse bootstrap` | Propose a manifest for a new project (user approves first) |
-| `warehouse release <id> <major\|minor\|patch>` | Bump version, finalize changelog, run checks and tests, commit, tag |
+| `warehouse release <id> <major\|minor\|patch\|initial>` | Bump version, finalize changelog, run checks and tests, commit, tag |
 | `warehouse check` | Read-only health report across projects |
 | `warehouse discard` / `promote` / `detach <id>` | Resolve local edits to synced copies |
 | `warehouse impact <id>` | List projects that use an item and their pins |
 | `warehouse registry` | Regenerate `_registry/projects.md` |
 | `warehouse index` | Regenerate `00_INDEX.md` |
+| `warehouse install-hook [--force]` | Install git post-commit and post-merge hooks |
 
 ## Status
 
-**Phase 2 of 5: The tool.** Batch 1 of `_tools/warehouse.py` is built and under review; batch 2
-(`promote`, `discard`, `detach`, `template`, `bootstrap`) is next. The three standards are drafted as
-items in `conventions/`. Old notes live in `reference/` (legacy architecture notes in
-`reference/legacy-architecture/`) and `_archive/`. No items are released yet and nothing syncs.
+**Phase 4 of 5: Pilot projects.** The tool `_tools/warehouse.py` is fully implemented and tested (146 tests passing). All 18 initial catalog items are drafted, reconciled, and released at `0.1.0`. Pilot projects (`doc-scanner`, `GRIP`, `COLLEGE`) are onboarded via progressive disclosure profiles.
 
-| Phase | What |
-|---|---|
-| 1. Foundation | Repo, folders, these docs, the standards as items ← **now** |
-| 2. The tool | `_tools/warehouse.py` and its tests |
-| 3. First items | Reconcile the first batch into `1.0.0` releases |
-| 4. Pilot projects | doc-scanner, GRIP, COLLEGE |
-| 5. Roll out | Remaining projects, one at a time |
+| Phase | What | Status |
+|---|---|---|
+| 1. Foundation | Repo, folders, conventions, standards | Complete |
+| 2. The tool | `_tools/warehouse.py` (Batches 1 & 2 + Profiles) and test suite | Complete |
+| 3. First items | 18 catalog items drafted, reviewed, released at `0.1.0` | Complete |
+| 4. Pilot projects | doc-scanner, GRIP, COLLEGE onboarded & verified ← **now** | In Progress |
+| 5. Roll out | Remaining projects, one at a time | Upcoming |
 
-Full plan: [[warehouse-architecture]]. Catalog: [[00_INDEX]].
+Full plan: [[warehouse-architecture]]. Catalog: [[00_INDEX]]. Command Reference: [[cli-reference]].
+
