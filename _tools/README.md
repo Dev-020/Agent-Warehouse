@@ -41,7 +41,7 @@ projects. The suite takes a few minutes on Windows (it runs many real git comman
 
 ## Commands
 
-See [[cli-reference]] in `reference/` for the complete reference guide and option breakdown.
+See [[cli-reference]] in `docs/` for the complete reference guide and option breakdown.
 
 | Command | Batch | Status |
 |---|---|---|

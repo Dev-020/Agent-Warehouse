@@ -12,9 +12,9 @@ It is an Obsidian vault and a git repo (private remote on GitHub).
 AI/
 ├── 00_INDEX.md          catalog: every item, version, summary, what projects it fits
 ├── README.md            this file
-├── QUICKSTART.md        step-by-step onboarding guide for projects
 ├── AGENTS.md / CLAUDE.md  rules for agents working on the warehouse itself
 │
+├── docs/                warehouse documentation (guides, taxonomy, CLI reference)
 ├── architecture/        system designs (Codebuff foundation, multi-agent setups)
 ├── protocols/           procedures (session logs, working memory, research discipline …)
 ├── conventions/         formats and standards (backlog, frontmatter, commits, naming)
@@ -47,7 +47,7 @@ Every item's format is defined in [[warehouse-item]].
 
 ## How a project uses it
 
-See [[QUICKSTART]] for a 3-minute, step-by-step onboarding walkthrough.
+See [[quickstart]] for a 3-minute, step-by-step onboarding walkthrough.
 
 1. **Manifest.** The project has a `.warehouse.yml` at its root, which the project commits:
    ```yaml
@@ -86,7 +86,7 @@ Details: [[changelog]].
 
 ## Commands
 
-See [[cli-reference]] in `reference/` for the complete reference manual with argument breakdowns and usage examples.
+See [[cli-reference]] in `docs/` for the complete reference manual with argument breakdowns and usage examples.
 
 | Command | Purpose |
 |---|---|
@@ -118,6 +118,6 @@ The tool `_tools/warehouse.py` is fully implemented and tested (146 tests passin
 | 4. Pilot projects | doc-scanner, GRIP, COLLEGE onboarded & verified | Complete |
 | 5. Fleet Adoption | Decentralized on-demand adoption via project agents (Pull vs Push) | Active / Ongoing |
 
-Full plan: [[warehouse-architecture]]. Catalog: [[00_INDEX]]. Command Reference: [[cli-reference]]. Quickstart: [[QUICKSTART]].
+Full plan: [[warehouse-architecture]]. Catalog: [[00_INDEX]]. Taxonomy: [[taxonomy]]. Command Reference: [[cli-reference]]. Quickstart: [[quickstart]].
 
 

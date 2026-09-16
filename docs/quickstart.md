@@ -201,5 +201,6 @@ warehouse add convention/commits@0.1
 
 * **Catalog Index:** [[00_INDEX]] — All items, version statuses, and summaries.
 * **Full CLI Manual:** [[cli-reference]] — Detailed documentation for all flags and commands.
+* **Agentic Taxonomy:** [[taxonomy]] — Definitive definitions for rules, protocols, conventions, and workflows.
 * **Architecture & Invariants:** [[warehouse-architecture]] — Core design and propagation rules.
 * **Context Engineering:** [[progressive-context-disclosure]] — Token economics and why tiered profiles exist.

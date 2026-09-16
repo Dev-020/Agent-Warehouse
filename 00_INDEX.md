@@ -65,10 +65,16 @@ Remaining planned items to reconcile from existing project copies:
 - 2026-09-15 — convention/commits 0.1.0
 <!-- warehouse:releases:end -->
 
-## Reference (not synced)
+## Documentation & Reference (not synced)
 
-**Plan and research** (`reference/`):
-- [[warehouse-architecture]] — the approved warehouse plan
+**Warehouse documentation** (`docs/`):
+- [[taxonomy]] — terminology standard: rules, protocols, conventions, and workflows
+- [[quickstart]] — 3-minute project onboarding walkthrough
+- [[cli-reference]] — complete CLI manual and command reference
+- [[warehouse-architecture]] — system design, phase rollout, and synchronization invariants
+- [[progressive-context-disclosure]] — context tiering and token economics
+
+**Research and audits** (`reference/`):
 - [[workspace-audit]] — what exists across projects and where it drifted
 - [[backlog-comparison]]
 - [[agentic-landscape]]

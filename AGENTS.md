@@ -18,7 +18,7 @@ business. Do not add items or notes about it.
 
 1. `README.md` — what the warehouse is and how it is laid out.
 2. `00_INDEX.md` — what items exist, their versions and status.
-3. The plan, `reference/warehouse-architecture.md`, when the task touches structure or process.
+3. The plan, `docs/warehouse-architecture.md`, when the task touches structure or process.
 
 ## Items
 
@@ -27,7 +27,7 @@ business. Do not add items or notes about it.
   [[versioning]] (SemVer) and [[changelog]] (Keep a Changelog).
 - Put each item in the folder for its kind. Scripts go in `tools/` unless they are a small helper
   that means nothing outside one skill.
-- `case-studies/` and `reference/` are notes, not items. They are never synced.
+- `docs/`, `case-studies/` and `reference/` are documentation and notes, not items. They are never synced.
 
 ## Changes and releases
 
