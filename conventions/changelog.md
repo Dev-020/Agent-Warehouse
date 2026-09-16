@@ -1,6 +1,6 @@
 ---
 id: convention/changelog
-version: 0.1.0
+version: 0.1.1
 status: draft
 summary: Keep a Changelog rules for warehouse items — location, headings, categories and breaking changes.
 applies-to: [warehouse]
@@ -75,9 +75,7 @@ Write for the projects that use the item, not for yourself.
 
 ## Releasing
 
-> `warehouse release` is Phase 2 and not built yet. Until then, keep changes under `[Unreleased]`.
-
-`warehouse release <id> <major|minor|patch>` will:
+`warehouse release <id> <major|minor|patch>` (or `initial` for an item's first release):
 1. move everything under `[Unreleased]` into a new dated version heading;
 2. bump `version` in the frontmatter;
 3. run checks (and tests for tools);
@@ -137,6 +135,10 @@ Bottom of `protocols/session-log.md`:
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.1] - 2026-09-16
+#### Fixed
+- Removed the outdated note that `warehouse release` is not built yet; documented `initial`.
 
 ### [0.1.0] - 2026-09-14
 #### Added
