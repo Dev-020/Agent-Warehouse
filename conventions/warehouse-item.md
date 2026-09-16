@@ -1,6 +1,6 @@
 ---
 id: convention/warehouse-item
-version: 0.1.0
+version: 0.1.1
 status: draft
 summary: The format every warehouse item follows — kinds, folders, frontmatter, placeholders and status.
 applies-to: [warehouse]
@@ -127,7 +127,7 @@ draft (0.x.y)  →  canonical (1.0.0+)  →  deprecated
 
 ## What authors should know about synced copies
 
-This is for information. The sync tool (Phase 2, not built yet) produces it; authors don't write it.
+This is for information. The sync tool (`warehouse sync`) produces it; authors don't write it.
 
 Each synced file in a project starts with this header:
 ```markdown
@@ -182,6 +182,10 @@ Write a log in `{{session_folder}}` at the end of every working session.
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.1] - 2026-09-16
+#### Fixed
+- Removed the outdated note that the sync tool is not built yet.
 
 ### [0.1.0] - 2026-09-15
 #### Added
