@@ -1040,10 +1040,9 @@ Behaviour changed after the Reviewer's pass. Each has a regression test in `test
 | R16 | Keep shortcut: a missing file is restored only if re-rendering reproduces its lock hash; otherwise `error` "cannot restore". | §4.2 |
 | R17 | `remove` (and sync's orphan handling) drop requirers that are no longer installed from an orphan's `required_by`. | §4.7 |
 | R18 | Discovery skips **linked git worktrees** (a `.git` file whose `gitdir:` points into `.../worktrees/...`), whatever the folder name; they are neither projects nor descended into. Refs named `desktop.ini` (Google Drive) are ignored when listing tags. | §2.1 |
-| R19 | pply processes actions in dependency (topological) order, treating dependency cycles as error. | §4.2 |
+| R19 | `apply` processes actions in dependency (topological) order, treating dependency cycles as error. | §4.2 |
 | R20 | Requirers are blocked if their required item's resulting lock version does not match the constraint pin (catches drifted dependencies stuck on older versions). | §4.2 |
-| R21 | pply major hint explicitly names the constraining requirer item (instead of an arbitrary one). | §4.2 |
-| R22 | pply logs tracebacks for unexpected errors if --verbose, and appends them to .state/hook.log. | §4.2 |
+| R21 | `apply` major hint explicitly names the constraining requirer item (instead of an arbitrary one). | §4.2 |
+| R22 | `apply` logs tracebacks for unexpected errors if --verbose, and appends them to .state/hook.log. | §4.2 |
 | R23 | Case-insensitivity is determined by probing the target filesystem instead of assuming based on the OS. | §4.2 |
-| R24 | check reports projects stuck in retry (uto-sync.json has 
-eeds_retry: true or pending journal entries). | §4.9 |
+| R24 | check reports projects stuck in retry (`auto-sync.json` has `needs_retry`: true or pending journal entries). | §4.9 |

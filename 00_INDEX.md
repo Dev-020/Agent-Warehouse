@@ -81,8 +81,8 @@ Remaining planned items to reconcile from existing project copies:
 - [[codebuff-trial-log]]
 - [[codebuff-source-links]]
 
-**Legacy architecture notes** (`reference/legacy-architecture/`). These are not items; they will be reconciled into
-`architecture/codebuff-orchestration` in Phase 3:
+**Legacy architecture notes** (`reference/legacy-architecture/`). These are not items; they were reconciled into
+[[codebuff-orchestration|architecture/codebuff-orchestration]] in Phase 3 and are kept as source material:
 - [[shared-agent-architecture]]
 - [[claude-code-setup]]
 - [[antigravity-setup]]

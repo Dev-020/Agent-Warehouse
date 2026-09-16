@@ -39,8 +39,9 @@ business. Do not add items or notes about it.
   project uses it, then move it to `_archive/`.
 - **Ask the user before anything that changes an item's contract** (format, required steps,
   structure, setting names, placeholders, tool commands/arguments/output/behaviour).
-- `warehouse release` is Phase 2 and does not exist yet. Until it does, leave changes under
-  `[Unreleased]` and do not invent version numbers or tags.
+- **Release only with `warehouse release <id> <major|minor|patch|initial>`.** Never hand-edit
+  `version:` or create tags yourself; the command bumps the version, finalizes the changelog, commits
+  and tags.
 
 ## Other projects
 
@@ -53,7 +54,7 @@ business. Do not add items or notes about it.
 - **Agent Workflow**: Agents working on the warehouse should run `warehouse inbox list` (or check `_inbox/`) at the start of a session to identify open requests/issues, and use `warehouse inbox triage <ticket_id>` to move them to the backlog.
 - **No secrets** in the warehouse: no tokens, keys, passwords or personal credentials, in items,
   settings examples or notes.
-- **Keep `00_INDEX.md` current** when you add, release, deprecate or archive an item. It is maintained
-  by hand until `warehouse index` exists.
+- **Keep `00_INDEX.md` current** when you add, release, deprecate or archive an item. Regenerate the
+  catalog with `warehouse index` (`release` does this automatically).
 - Use `[[wikilinks]]` by note filename for internal links.
 - Write plainly: short sections, tables where they help, concrete examples.
