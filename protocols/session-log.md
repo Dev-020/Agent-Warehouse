@@ -1,6 +1,6 @@
 ---
 id: protocol/session-log
-version: 0.1.0
+version: 0.2.0
 status: draft
 summary: "How and when agents write session handoff logs and maintain session indexes."
 applies-to: [vault, codebase]
@@ -70,30 +70,45 @@ Session log files reside in `{{session_folder}}/` and follow this format:
 
 ## Frontmatter schema
 
-Every session log carries this frontmatter contract:
+The schema is owned by [[frontmatter]] (section 4.1, session logs). This protocol follows it and
+explains what each field means for handoffs. If the two ever disagree, [[frontmatter]] wins.
 
 ```yaml
 ---
 type: session-log
 date: YYYY-MM-DD
+audience: agent                  # agent or team
 written_by: claude-code          # Environment: claude-code, antigravity, gemini-cli, claude-chat, etc.
 wired: true                      # true if indexed into {{session_index}}, false if pending integration
 coordination_state: done         # Optional: claimed, in-progress, acked, handed-off, done
-topics: [optional, topic-tags]
+tags: [optional, topic-tags]     # Optional
+summary: "Optional one-line headline"
 ---
 ```
 
 ### Frontmatter fields
 
 - `type`: Must be `session-log`.
-- `date`: Immutable date of the session (`YYYY-MM-DD`).
+- `date`: Immutable date of the session (`YYYY-MM-DD`). It is also the log's creation date, so a
+  separate `created` field is not needed. If `created` is present it must equal `date`.
+- `audience`: Who the log is written for: `agent` (default) or `team`.
 - `written_by`: Identifies the writing environment. This is critical for trust layering:
   - Local CLI/IDE agents (`claude-code`, `antigravity`) have access to compilers, tests, and filesystem tools.
   - Web or chat agents (`claude-chat`, `gemini-chat`) operate without local test suites; their claims require verification.
 - `wired`: Boolean indicating whether the log is integrated:
   - `true`: Linked into `{{session_index}}` and any referenced state changes or handoffs have been applied.
   - `false`: Written by an agent in a create-only environment, awaiting processing by a filesystem-capable agent.
-- `coordination_state`: Optional tag used when coordinating concurrent agents or tracking multi-agent handoffs.
+- `coordination_state`: Optional handoff state, used when coordinating concurrent agents or tracking
+  multi-agent handoffs. One of:
+  - `claimed`: an agent has taken the work described in the log.
+  - `in-progress`: work is under way.
+  - `acked`: the receiving agent has read and accepted the handoff.
+  - `handed-off`: work was passed to another agent and is waiting to be picked up.
+  - `done`: nothing further is expected from this log.
+- `tags`: Optional topic tags for discovery.
+- `summary`: Optional one-line headline, usually the same text used in `{{session_index}}`.
+- Session logs carry no `updated` or `status` field: a log is an immutable record, and its handoff
+  state lives in `coordination_state`.
 
 ---
 
@@ -175,6 +190,20 @@ However, the factual text and claims in a session log are immutable historical r
 ## Changelog
 
 ### [Unreleased]
+
+### [0.2.0] - 2026-09-17
+#### Changed
+- **BREAKING:** the frontmatter schema now defers to `convention/frontmatter` section 4.1 and adds a
+  required `audience` field (`agent` or `team`).
+  **Migration:** add `audience: agent` to every existing session log.
+- **BREAKING:** the `topics` field is renamed to `tags`, the universal field from
+  `convention/frontmatter`.
+  **Migration:** rename `topics:` to `tags:` in existing session logs.
+#### Added
+- Definitions for each `coordination_state` value, and optional `tags` and `summary` fields.
+#### Fixed
+- Stated that `date` doubles as the creation date and that session logs carry no `updated` or
+  `status`, resolving the conflict with `convention/frontmatter` section 2.
 
 ### [0.1.0] - 2026-09-15
 #### Added
