@@ -1,6 +1,6 @@
 ---
 id: convention/frontmatter
-version: 0.1.0
+version: 0.2.0
 status: draft
 summary: Closed-vocabulary YAML frontmatter schema for markdown notes across vaults and projects.
 applies-to: [vault, codebase, warehouse]
@@ -47,9 +47,11 @@ Every tracked markdown note carries these core fields at the top of its YAML fro
 | `tags` | list of strings | Classification tags for indexing and discovery. | `tags: [api, authentication]` |
 | `summary` | string | Single-line summary of note purpose and scope. | `summary: OAuth token refresh flow.` |
 
-> [!note] Immutability of session logs
-> A `session-log` is an immutable historical record of a single working session. Because it is not
-> revised post-handoff, it carries `date` (and `created`) rather than an `updated` field.
+> [!note] Session logs use their own schema
+> A `session-log` is an immutable historical record of a single working session. It uses the schema
+> in section 4.1 instead of the universal fields: `date` doubles as the creation date (`created` is
+> optional and must equal `date`), there is no `updated` or `status`, and `tags` and `summary` are
+> optional.
 
 ---
 
@@ -79,14 +81,20 @@ Certain note types require or support specialized fields alongside the universal
 
 ### 4.1. Session logs (`type: session-log`)
 
-Session logs document agent activities and cross-session handoffs (see [[session-log]]):
+Session logs document agent activities and cross-session handoffs. This table is the complete
+schema; [[session-log]] explains how each field is used.
 
 | Field | Required | Description |
 |---|---|---|
-| `date` | Yes | Date of session (`YYYY-MM-DD`). |
-| `audience` | Yes | Usually `agent` or `team`. |
+| `type` | Yes | `session-log`. |
+| `date` | Yes | Date of session (`YYYY-MM-DD`). Also the creation date. |
+| `audience` | Yes | `agent` or `team`. |
 | `written_by` | Yes | Agent engine or developer identifier (e.g. `claude-code`, `antigravity`). |
-| `coordination_state` | Optional | Multi-agent coordination state (e.g. `solo`, `pair`, `subagent`). |
+| `wired` | Yes | `true` once the log is linked into the session index and its handoffs are applied; `false` while it awaits a filesystem-capable agent. |
+| `coordination_state` | Optional | Handoff state: `claimed`, `in-progress`, `acked`, `handed-off` or `done`. |
+| `created` | Optional | If present, must equal `date`. |
+| `tags` | Optional | Topic tags for discovery. |
+| `summary` | Optional | One-line headline. |
 | `open_threads` | Optional | Pointers to active investigations or incomplete handoffs. |
 
 ### 4.2. Warehouse items (`convention`, `protocol`, `architecture`, `template`)
@@ -136,6 +144,22 @@ In academic or course-scoped vaults:
 ## Changelog
 
 ### [Unreleased]
+
+### [0.2.0] - 2026-09-17
+#### Changed
+- **BREAKING:** session-log `coordination_state` values are now the handoff states `claimed`,
+  `in-progress`, `acked`, `handed-off` and `done`, matching `protocol/session-log`. The earlier
+  examples `solo`, `pair` and `subagent` are dropped.
+  **Migration:** replace `solo`/`pair`/`subagent` in session logs with the matching handoff state,
+  or remove the field.
+- **BREAKING:** session logs now require `wired`.
+  **Migration:** add `wired: true` to session logs already linked into the session index, and
+  `wired: false` to any that are not.
+#### Added
+- `type`, `created`, `tags` and `summary` rows in the session-log schema (section 4.1).
+#### Fixed
+- Section 2 no longer implies session logs need `created`, `updated` and `status`; section 4.1 is
+  now the complete session-log schema, consistent with `protocol/session-log`.
 
 ### [0.1.0] - 2026-09-15
 #### Added
