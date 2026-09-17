@@ -71,7 +71,7 @@ Heuristic) │  (e.g., TDD cycle, Release pipeline)│  (e.g., SemVer, commit me
 * **Examples:**
   * `convention/commits`: Conventional Commits standard (`feat:`, `fix:`, `chore:`).
   * `convention/frontmatter`: Closed-vocabulary YAML metadata schema for markdown notes.
-  * `convention/backlog`: Structured markdown task lists with lifecycle states (`TODO`, `IN_PROGRESS`, `DONE`).
+  * `convention/backlog`: Structured markdown task lists with task statuses (`Open`, `In Progress`, `Closed`, `Rejected`, `Cancelled`) and lifecycle sections (In Progress, Backlog, Completed, Icebox).
   * `convention/versioning`: Semantic Versioning (`MAJOR.MINOR.PATCH`) guarantees.
 
 ### 4. Protocol (Contract / Verification Handshake)
