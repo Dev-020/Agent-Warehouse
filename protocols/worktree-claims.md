@@ -1,6 +1,6 @@
 ---
 id: protocol/worktree-claims
-version: 0.1.0
+version: 0.1.1
 status: draft
 summary: Multi-agent git worktree claims, reservation semantics, branch claims, atomic locks, merge gate, and conflict avoidance across concurrent sessions.
 applies-to: [vault, codebase]
@@ -54,17 +54,34 @@ working tree while tasks are in flight. All active implementation takes place in
 
 ## 3. Worktree Directory Topology
 
-To avoid file indexers (e.g. Obsidian vaults, IDE project watchers) indexing active worktrees $N+1$ times
-and multiplying sync traffic, worktrees live **outside the primary project tree**:
+Where worktrees live depends on what watches or surrounds `<project-root>`:
+
+- **Cloud sync & whole-folder indexers (vaults):** If the project lives inside a synced folder (Google Drive,
+  OneDrive, Dropbox) or an Obsidian vault, any directory inside `<project-root>`—even when `.gitignore`d or
+  dot-prefixed—is still synced and indexed $N+1$ times. Worktrees **must** live outside the synced tree.
+- **Parent monorepos & shared workspaces (codebases):** If `<project-parent>` is itself a git working tree or a
+  shared projects directory, a plain `../worktrees/` folder lands inside the parent repo as untracked files and
+  can collide on task IDs across sibling repositories.
+
+### 3.1. Supported Topologies
+
+Pick the topology that matches the project's environment:
+
+| Topology | Path Pattern | When to Use | Required Invariants |
+|---|---|---|---|
+| **External sibling** *(default)* | `<project-parent>/worktrees/<ID>` (or `../worktrees/<repo-name>/<ID>`) | Cloud-synced vaults; standalone repos with an unmonitored parent directory | Must sit outside any cloud-synced folder. Namespace by `<repo-name>` if sibling repos share `<project-parent>`. |
+| **External user-local** | e.g. `%LOCALAPPDATA%/<app>/worktrees/<repo-name>/<ID>` | Repos inside a parent monorepo/workspace; orchestrated worker pools | Scope by `<repo-name>` (and run ID if applicable) so separate repos never collide on task IDs. |
+| **In-repo dot-directory** | `<project-root>/.worktrees/<ID>` or `<project-root>/.claude/worktrees/<ID>` | Code repos **not** under cloud sync (including subagent harnesses) | 1. **Must be gitignored** (`.gitignore` or `.git/info/exclude`) so primary-tree dirt checks (§4.5 step 4) do not refuse merges.<br>2. **Must be dot-prefixed** (or excluded in `norecursedirs` / linter configs) so `pytest` and linters invoked from `<project-root>` do not collect worktree copies $N+1$ times. |
 
 ```
-<project-parent>/
-├── <project-root>/                    # Main repository working tree (master / main)
-│   ├── .git/                          # Or .git pointer file
-│   └── BACKLOG.md
-└── worktrees/                         # Isolated worktree directory (gitignored / outside root)
-    ├── <ID-1>/                        # Checked out to claim/<ID-1>
-    └── <ID-2>/                        # Checked out to claim/<ID-2>
+# External topology (vaults & standalone repos)      # In-repo topology (non-synced code repos)
+<project-parent>/                                    <project-root>/
+├── <project-root>/                                  ├── .git/
+│   ├── .git/          # Or .git pointer file        ├── .gitignore         # Ignores .worktrees/ or .claude/worktrees/
+│   └── BACKLOG.md                                   ├── BACKLOG.md
+└── worktrees/         # Outside synced root         └── .worktrees/        # Dot-prefixed & gitignored
+    ├── <ID-1>/        # claim/<ID-1>                    ├── <ID-1>/        # claim/<ID-1>
+    └── <ID-2>/        # claim/<ID-2>                    └── <ID-2>/        # claim/<ID-2>
 ```
 
 ---
@@ -182,6 +199,10 @@ refreshes).
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.1] - 2026-09-26
+#### Changed
+- Clarified worktree location drivers in §3 (cloud-synced vaults vs parent monorepos/codebases) and documented the three supported topologies (external sibling, external user-local, and gitignored dot-prefixed in-repo directories such as `.worktrees/` or `.claude/worktrees/`) with their dirt-check and test-discovery invariants.
 
 ### [0.1.0] - 2026-09-15
 #### Added
