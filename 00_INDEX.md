@@ -86,6 +86,10 @@ Items intentionally postponed until enough real use cases exist. Revisit when se
 - [[warehouse-architecture]] — system design, phase rollout, and synchronization invariants
 - [[progressive-context-disclosure]] — context tiering and token economics
 
+**Case studies** (`case-studies/`):
+- [[shadow-cursor-038-phased-build]] — How Shadow Cursor #038 moved from one failed long implementer session to a phased build with fresh subagents, probe-backed reviews, and one full test run per phase.
+- [[shadow-cursor-063-staffing]] — How Shadow Cursor #063 derived phase staffing from size, coupling, and model selection rather than repeating #038's default, and how raw-file citations caught flawed probe reports.
+
 **Research and audits** (`reference/`):
 - [[workspace-audit]] — what exists across projects and where it drifted
 - [[computer-use-research]] — staged Hermes computer-use vs building on cua-driver, with prior-art comparison
