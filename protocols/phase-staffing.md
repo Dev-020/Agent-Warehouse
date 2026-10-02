@@ -1,6 +1,6 @@
 ---
 id: protocol/phase-staffing
-version: 0.1.0
+version: 0.1.1
 status: draft
 summary: Before a phase or task is built, decide staffing from three things in order (size, coupling, model), show the user the table, and verify every agent's report against its raw evidence.
 applies-to: [codebase]
@@ -83,6 +83,17 @@ Plans should present a staffing table across phases, and every brief should open
 
 When requesting user approval, state the three answers and rationale concisely. The user makes the final determination and may route specific phases to different models or agent harnesses.
 
+## Handing a phase to a second pipeline
+
+A phase can go to another tool's agents (a second pipeline) when the coordinating side is short of usage, or to build two loose phases at once.
+
+- **The second pipeline is complete in itself:** its own orchestrator, implementer and reviewer, three separate agents. It builds, reviews and fixes, and reports back only when that is done. A hand-off that returns built but unreviewed pushes the review back onto the coordinating side.
+- **The brief names the three roles and what each never does,** requires a failing probe for every finding, and asks which model each agent ran on.
+- **The two sides never share a file in flight.** Each brief lists the other side's files as off limits.
+- **The coordinating Orchestrator still verifies** the report against the commits and re-runs the probes before merging. Verifying costs far less than reviewing.
+- **Files in the repository are the channel** between the two sides when there is no direct one: a brief going out, a report coming back, the user relaying a one-line prompt.
+- **Ask the user about usage** before starting a round on either side.
+
 ## Reports are checked against their raw evidence
 
 Delegating work across multiple agents or external tools is only reliable if reports are objectively verifiable:
@@ -114,6 +125,10 @@ A report may quote what a model claimed happened rather than what the execution 
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.1] - 2026-10-02
+#### Added
+- Added guidelines for handing a phase to a second pipeline (self-contained orchestrator/implementer/reviewer roles, inter-pipeline IPC via repository files, and probe verification).
 
 ### [0.1.0] - 2026-10-02
 #### Added
