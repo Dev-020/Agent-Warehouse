@@ -1,6 +1,6 @@
 ---
 id: architecture/codebuff-orchestration
-version: 0.1.0
+version: 0.1.1
 status: draft
 summary: Distilled Codebuff multi-agent architecture, cost scaling analysis, and tiered orchestration.
 applies-to: [vault, codebase]
@@ -81,9 +81,10 @@ Instead of running a persistent multi-agent committee, sessions must dynamically
 - **Best for:** Core engine updates, security-critical boundaries, schema migrations, and merge algorithms.
 
 ### Tier 3: Context Firewall / Specialist — 5% of Tasks
-- **Role:** Bounded, short-lived exploration subagents.
-- **Mechanism:** Spawned to read bulky external files (e.g. searching 50 logs, scanning large unfamiliar codebases, or reconciling disparate notes).
-- **The Firewall:** The subagent ingests the 50K+ tokens of raw material, distills the findings into a concise 1-page summary, and **terminates**. The raw 50K tokens evaporate with the subagent; only the distilled summary enters the main session context.
+- **Role:** Bounded, short-lived exploration, implementation, or review subagents.
+- **Mechanism:** Spawned to read bulky external files (e.g. searching 50 logs, scanning large unfamiliar codebases, or reconciling disparate notes) or to implement/review bounded checkpoint steps.
+- **The Firewall:** The subagent ingests the 50K+ tokens of raw material, distills findings into a concise report citing raw evidence, and **terminates**. The raw tokens evaporate with the subagent; only the distilled summary enters the main session context.
+- **Operating Procedures:** See [[phased-implementation]] for multi-phase codebases and [[phase-staffing]] for sizing, coupling, and model tier selection.
 
 ---
 
@@ -119,6 +120,10 @@ The original Codebuff framework introduced 7 distinct roles. Empirical testing r
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.1] - 2026-10-02
+#### Changed
+- Linked protocol/phased-implementation and protocol/phase-staffing under Tier 3 as the operating procedures for implementation, code review, and model staffing.
 
 ### [0.1.0] - 2026-09-15
 #### Added
