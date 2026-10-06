@@ -1,6 +1,6 @@
 ---
 id: protocol/session-log
-version: 0.2.0
+version: 0.2.1
 status: draft
 summary: "How and when agents write session handoff logs and maintain session indexes."
 applies-to: [vault, codebase]
@@ -11,7 +11,7 @@ settings:
   session_index:
     description: "Path to the central session index file"
     default: "AI/session/00_SESSIONS.md"
-requires: []
+requires: [convention/frontmatter@0.2]
 replaces: null
 ---
 
@@ -190,6 +190,10 @@ However, the factual text and claims in a session log are immutable historical r
 ## Changelog
 
 ### [Unreleased]
+
+### [0.2.1] - 2026-10-06
+#### Fixed
+- Added missing `convention/frontmatter@0.2` to requires, ensuring projects pulling session-log receive the schema it defers to (section 4.1).
 
 ### [0.2.0] - 2026-09-17
 #### Changed
