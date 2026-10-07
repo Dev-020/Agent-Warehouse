@@ -1,6 +1,7 @@
 # Obsidian per-device state
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
+.obsidian/graph.json
 .trash/
 
 # Windows / Google Drive metadata
@@ -16,3 +17,6 @@ __pycache__/
 # Warehouse tool
 _tools/.state/
 warehouse.config.local.yml
+
+# CLI engine sandboxes
+.*-engine/
