@@ -1,9 +1,11 @@
-"""release (DESIGN §4.8) and hooks (§4.13, §4.14, User decision 5)."""
+"""release (DESIGN §4.8) and hooks (§4.13, §4.14, §4.14b, User decision 5)."""
 from __future__ import annotations
 
 import re
 
 import json
+import os
+import subprocess
 import shutil
 import time
 
@@ -182,7 +184,7 @@ def test_install_hook_idempotent_and_force_backup(wh):
     assert (hooks / "post-commit").read_bytes() == shipped_commit
     assert b"sync --auto --if-new-tags" in (hooks / "post-merge").read_bytes()
     code, out = wh.run("install-hook")
-    assert code == 0 and out.count("already installed") == 2
+    assert code == 0 and out.count("already installed") == 4
     (hooks / "post-merge").write_text("#!/bin/sh\necho mine\n")
     code, out = wh.run("install-hook")
     assert code == 2 and "--force" in out
@@ -219,7 +221,7 @@ def test_hook_script_manual_tag_then_commit_syncs(wh):
     assert not (p / ".warehouse.lock").exists()
     (wh.root / "notes.txt").write_text("unrelated\n")
     git(wh.root, "add", "notes.txt")
-    git(wh.root, "commit", "-q", "-m", "ordinary commit")  # real post-commit hook runs
+    git(wh.root, "commit", "-q", "-m", "chore: ordinary commit")  # real post-commit hook runs
     lock = wh.lock(p)
     assert lock["items"][DOC]["version"] == "1.1.0", _hook_log(wh)
     assert "Tagged by hand." in (p / "warehouse" / "session-log.md").read_text()
@@ -244,3 +246,56 @@ def test_post_merge_hook_syncs_new_tags(wh):
     git(wh.root, "checkout", "-q", "main")
     git(wh.root, "merge", "-q", "--no-edit", "feature")  # post-merge hook runs
     assert wh.lock(p)["items"][DOC]["version"] == "1.2.0", _hook_log(wh)
+
+
+def _run_hook(wh, name, *args, stdin="", env_extra=None):
+    env = {k: v for k, v in os.environ.items() if k != "WAREHOUSE_RELEASING"}
+    env.update(env_extra or {})
+    # bytes, not text: on Windows, text mode turns the LF line endings git sends into CRLF
+    cp = subprocess.run([shutil.which("sh"), str(wh.root / ".git" / "hooks" / name), *args], cwd=wh.root,
+                        input=stdin.encode(), capture_output=True, env=env)
+    return cp.returncode, (cp.stdout + cp.stderr).decode("utf-8", "replace")
+
+
+def test_pre_push_blocks_item_commits_outside_release(wh):
+    if shutil.which("python") is None or shutil.which("sh") is None:
+        pytest.skip("python or sh not on PATH for the hook shell")
+    copy_tool_into(wh)
+    wh.commit("tool")
+    assert wh.run("install-hook")[0] == 0
+    wh.write_item(DOC, "1.0.0", record="#### Added\n- First release.")
+    wh.commit("add item")
+    base = git(wh.root, "rev-parse", "HEAD").strip()
+    assert wh.run("release", DOC, "initial", "--no-sync")[0] == 0
+
+    def push_line():
+        head = git(wh.root, "rev-parse", "HEAD").strip()
+        return f"refs/heads/main {head} refs/heads/main {base}\n"
+
+    code, out = _run_hook(wh, "pre-push", "origin", "url", stdin=push_line())
+    assert code == 0 and "validation passed" in out, out  # the release commit is allowed
+
+    wh.write_item("protocol/new-draft", "0.1.0", unreleased="- First draft.")
+    wh.commit("chore: add a draft protocol")
+    code, out = _run_hook(wh, "pre-push", "origin", "url", stdin=push_line())
+    assert code == 1 and '"chore: add a draft protocol" modifies item files' in out, out
+    assert "release: " + DOC not in out
+
+    deletion = f"(delete) {'0' * 40} refs/heads/old {base}\n"
+    assert _run_hook(wh, "pre-push", "origin", "url", stdin=deletion)[0] == 0
+
+
+def test_commit_msg_hook_enforces_conventional_commits(wh):
+    if shutil.which("sh") is None:
+        pytest.skip("sh not on PATH for the hook shell")
+    copy_tool_into(wh)
+    assert wh.run("install-hook")[0] == 0
+    msg = wh.root / "MSG"
+    for text, expected in [("fix(hooks): read pushed refs from stdin\n", 0), ("chore: tidy up\n", 0),
+                           ("ordinary commit\n", 1), ("Fix: capitalised summary\n", 1),
+                           ("Merge branch 'feature'\n", 0)]:
+        msg.write_text(text)
+        assert _run_hook(wh, "commit-msg", str(msg))[0] == expected, text
+    msg.write_text("release protocol/x@1.0.0\n")
+    assert _run_hook(wh, "commit-msg", str(msg))[0] == 1
+    assert _run_hook(wh, "commit-msg", str(msg), env_extra={"WAREHOUSE_RELEASING": "1"})[0] == 0

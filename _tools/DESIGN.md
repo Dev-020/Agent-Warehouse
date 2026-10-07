@@ -30,6 +30,8 @@ _tools/
 ├── warehouse.cmd           @python "%~dp0warehouse.py" %*
 ├── hooks/post-commit       shipped hook (§4.14)
 ├── hooks/post-merge        shipped hook (§4.14, User decision 5)
+├── hooks/pre-push          shipped hook (§4.14b)
+├── hooks/commit-msg        shipped hook (§4.14b)
 ├── DESIGN.md               this file
 ├── warehouse_core/         (refinement: named warehouse_core, not warehouse/, because a directory
 │                            cannot share the name of the bash wrapper `_tools/warehouse`)
@@ -765,8 +767,8 @@ description comments, `auto_sync: true`, `target: warehouse/`). `--write`: write
 
 ### 4.13 `install-hook [--force]`
 
-Hooks dir = `git rev-parse --git-path hooks` (warehouse). Copy `_tools/hooks/post-commit` **and
-`_tools/hooks/post-merge`** (LF; User decision 5). Per hook: existing file identical → "already installed";
+Hooks dir = `git rev-parse --git-path hooks` (warehouse). Copy `_tools/hooks/post-commit`,
+`_tools/hooks/post-merge` (LF; User decision 5), `_tools/hooks/pre-push` and `_tools/hooks/commit-msg` (§4.14b). Per hook: existing file identical → "already installed";
 different and no `--force` → exit 2 (nothing written); `--force` backs up to `<hook>.bak`. Ensure
 `_tools/.state/` exists.
 
@@ -802,6 +804,21 @@ no tags changed (one `for-each-ref`). Covers tags created by hand or fetched bef
 brings new commits, so release tags pulled from the remote trigger `sync --auto --if-new-tags`
 (User decision 5). A `git fetch` or an "Already up to date" pull does not run it; the next commit's
 post-commit hook, or a manual `warehouse sync`, covers that.
+
+### 4.14b Hooks `_tools/hooks/pre-push` and `_tools/hooks/commit-msg` (added 2026-10-07)
+
+`pre-push` blocks the push (exit 1) when:
+1. `warehouse check --json` fails; or
+2. a pushed commit changes `architecture/`, `protocols/`, `conventions/`, `skills/`, `tools/` or `templates/`
+   and its subject does not start with `release: `. Item changes go through `warehouse release`.
+
+Pushed commits come from the refs git passes on stdin: `<remote sha>..<local sha>` when the remote sha is known
+locally, else `<local sha> --not --remotes=<remote>`. Ref deletions are skipped. Python missing → skip (exit 0).
+`git push --no-verify` bypasses it.
+
+`commit-msg` enforces `<type>(<scope>)?: <summary>` (types feat, fix, docs, style, refactor, perf, test, chore,
+release; summary starts lowercase, 2–73 chars). Skips merge/revert/fixup/squash commits and commits made with
+`WAREHOUSE_RELEASING` set (`release` and the test fixtures).
 
 `.gitignore` additions: `_tools/.state/`, `warehouse.config.local.yml`, `__pycache__/`, `.pytest_cache/`
 (`desktop.ini` is already ignored; `sync_exclude` and discovery skip it too).

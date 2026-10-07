@@ -1,0 +1,59 @@
+#!/bin/sh
+# warehouse pre-push hook v1 — installed by `warehouse install-hook`
+# Blocks the push when `warehouse check` fails, or when a pushed commit changes item folders
+# without being a release commit (item changes go through `warehouse release`).
+# Bypass with: git push --no-verify
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+remote="$1"
+zero=0000000000000000000000000000000000000000
+items_re='^(architecture|protocols|conventions|skills|tools|templates)/'
+
+if command -v python >/dev/null 2>&1; then py=python
+elif command -v python3 >/dev/null 2>&1; then py=python3
+else
+  echo "pre-push: python not found; skipping warehouse checks" >&2
+  exit 0
+fi
+
+echo "🔍 Pre-push validation..."
+
+echo "  → warehouse check..."
+if ! "$py" "$root/_tools/warehouse.py" check --json >/dev/null 2>&1; then
+  echo "❌ warehouse check failed. Run 'warehouse check' for details."
+  echo "   (Bypass with: git push --no-verify)"
+  exit 1
+fi
+
+echo "  → Checking pushed commits for item changes outside release..."
+bad=0
+# git passes one line per pushed ref: <local ref> <local sha> <remote ref> <remote sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue  # ref deletion
+  if [ "$remote_sha" != "$zero" ] && git rev-parse -q --verify "$remote_sha^{commit}" >/dev/null; then
+    commits=$(git rev-list "$remote_sha..$local_sha")
+  else
+    # new ref on the remote: only commits the remote does not have yet
+    commits=$(git rev-list "$local_sha" --not --remotes="$remote")
+  fi
+  for c in $commits; do
+    subject=$(git log -1 --format=%s "$c")
+    case "$subject" in
+      "release: "*) continue ;;
+    esac
+    if git diff-tree --no-commit-id --name-only -r --root "$c" | grep -qE "$items_re"; then
+      echo "⚠️  Commit $(git rev-parse --short "$c") \"$subject\" modifies item files but is not a release commit."
+      bad=1
+    fi
+  done
+done
+
+if [ "$bad" -eq 1 ]; then
+  echo ""
+  echo "❌ Push blocked: Item files modified outside release process."
+  echo "   Fix: Use 'warehouse release <id> <major|minor|patch|initial>' instead."
+  echo "   Bypass with: git push --no-verify (not recommended)"
+  exit 1
+fi
+
+echo "✅ Pre-push validation passed"
+exit 0

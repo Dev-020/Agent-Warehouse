@@ -1,0 +1,27 @@
+#!/bin/sh
+# warehouse commit-msg hook v1 — installed by `warehouse install-hook`
+# Enforce conventional commit format: type(scope): summary
+# Allowed types: feat, fix, docs, style, refactor, perf, test, chore, release
+msg_file="$1"
+msg=$(cat "$msg_file")
+
+# Commits made by `warehouse release` (and test fixtures) carry WAREHOUSE_RELEASING
+if [ -n "$WAREHOUSE_RELEASING" ]; then
+  exit 0
+fi
+
+# Skip merge/revert/fixup/squash commits
+case "$msg" in
+  Merge*|Revert*|fixup!*|squash!*) exit 0 ;;
+esac
+
+# Pattern: type(optional-scope): summary
+# type: feat|fix|docs|style|refactor|perf|test|chore|release
+# summary: starts lowercase, 2-73 chars
+if ! echo "$msg" | head -1 | grep -qE '^(feat|fix|docs|style|refactor|perf|test|chore|release)(\([a-z0-9-]+\))?: [a-z].{1,72}$'; then
+  echo "❌ Commit message must follow conventional commits:"
+  echo "   <type>(<scope>): <imperative summary>"
+  echo "   Types: feat, fix, docs, style, refactor, perf, test, chore, release"
+  echo "   Example: fix(protocol): correct session log frontmatter schema"
+  exit 1
+fi

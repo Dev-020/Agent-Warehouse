@@ -1,4 +1,4 @@
-"""install-hook [--force]: install post-commit and post-merge hooks (DESIGN §4.13, User decision 5)."""
+"""install-hook [--force]: install post-commit, post-merge, pre-push and commit-msg hooks (DESIGN §4.13)."""
 from __future__ import annotations
 
 import os
@@ -7,7 +7,7 @@ import stat
 from ..errors import UsageError
 from ..fsops import WriteGuard, atomic_write
 
-HOOKS = ("post-commit", "post-merge")
+HOOKS = ("post-commit", "post-merge", "pre-push", "commit-msg")
 
 
 def run(ctx, args) -> int:
