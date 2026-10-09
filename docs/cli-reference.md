@@ -462,9 +462,9 @@ warehouse inbox <list | show | resolve | reject | triage> [ARGS]
 **Subcommands:**
 - `warehouse inbox list [--status open|triaged|resolved|rejected|all] [--type request|issue] [--json]`: Lists inbox tickets.
 - `warehouse inbox show <TICKET_ID> [--json]`: Shows detailed context and resolution notes for a ticket.
-- `warehouse inbox resolve <TICKET_ID> [--message "<MSG>"]`: Marks a ticket as resolved and appends resolution notes.
-- `warehouse inbox reject <TICKET_ID> [--reason "<REASON>"]`: Marks a ticket as rejected and appends reason.
-- `warehouse inbox triage <TICKET_ID>`: Triages an open ticket into the warehouse main `BACKLOG.md` and updates the ticket status to `triaged`.
+- `warehouse inbox resolve <TICKET_ID> [--message "<MSG>"]`: Marks a ticket as resolved and appends resolution notes. Refuses (exit 2) unless the ticket's `BACKLOG.md` entry is under Completed.
+- `warehouse inbox reject <TICKET_ID> [--reason "<REASON>"]`: Marks a ticket as rejected and appends reason. Refuses (exit 2) unless the ticket's `BACKLOG.md` entry is under the Icebox.
+- `warehouse inbox triage <TICKET_ID>`: Adds an open ticket to the warehouse `BACKLOG.md` (after the last open task of the same or higher priority) and updates the ticket status to `triaged`. Creates `BACKLOG.md`, with its header, if it does not exist.
 
 **Examples:**
 ```bash

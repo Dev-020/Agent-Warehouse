@@ -216,59 +216,142 @@ def update_ticket_status(warehouse_root: Path, ticket_id: str, new_status: str, 
     _write_ticket(ticket.file_path, ticket)
     return ticket
 
+OPEN_MARKER = "## 📌 Backlog (Open Tasks)"
+
+NEW_BACKLOG = """# Warehouse Backlog
+
+> **How this backlog is run** (`convention/backlog`)
+> - **Layout:** single file
+> - **IDs:** imported from `_inbox/` tickets (`[REQ-…]`, `[ISS-…]`). Never reused.
+> - **Entry style:** full
+> - **Writes:** by hand, one writer at a time. `warehouse inbox triage <id>` adds the entry for a ticket.
+> - **Extra fields:** `**Project**` and `**Item**`, after `**Created**`.
+
+## 📋 In Progress
+
+## 📌 Backlog (Open Tasks)
+
+## ✅ Completed
+
+## 🧊 Icebox (Not Doing / Rejected)
+"""
+
+_ENTRY = re.compile(r"^### \[([^\]]+)\]")
+_PRIORITY = re.compile(r"\*\*Priority\*\*:\s*`P(\d)`")
+
+
+def _priority_rank(priority: str | None) -> int:
+    m = re.fullmatch(r"P(\d)", priority or "")
+    return int(m.group(1)) if m else 2
+
+
+def _entry_lines(ticket: InboxTicket) -> list[str]:
+    lines = [
+        f"### [{ticket.id}] {ticket.summary}",
+        f"- **Status**: `Open` | **Priority**: `{ticket.priority}` | **Labels**: `{ticket.category.title()}`, `Inbox`",
+        f"- **Created**: {ticket.created[:10]}",
+    ]
+    if ticket.project:
+        lines.append(f"- **Project**: {ticket.project}")
+    if ticket.item:
+        lines.append(f"- **Item**: {ticket.item}")
+    lines += [
+        "",
+        "#### Why",
+        ticket.details or ticket.summary,
+        "",
+        "#### Wanted",
+        f"Address {ticket.type} submitted via warehouse inbox.",
+        "",
+        "#### Acceptance Criteria",
+        f"- [ ] #1 Investigate and resolve {ticket.id}.",
+        "- [ ] #2 Verify and release fix if applicable.",
+        "",
+        "#### Outcome",
+        "(Filled on completion.)",
+    ]
+    return lines
+
+
+def _insert_by_priority(content: str, entry: list[str], priority: str) -> str:
+    """Insert after the last open task of the same or higher priority (convention/backlog §4.3)."""
+    lines = content.split("\n")
+    if OPEN_MARKER not in lines:
+        return content.rstrip("\n") + "\n\n" + OPEN_MARKER + "\n\n" + "\n".join(entry) + "\n"
+    start = lines.index(OPEN_MARKER)
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    starts = [i for i in range(start + 1, end) if _ENTRY.match(lines[i])]
+
+    rank = _priority_rank(priority)
+    at = starts[0] if starts else end
+    for n, s in enumerate(starts):
+        e = starts[n + 1] if n + 1 < len(starts) else end
+        m = next((m for m in map(_PRIORITY.search, lines[s:e]) if m), None)
+        if m is None or int(m.group(1)) <= rank:
+            at = e
+
+    # Back up over trailing blank lines so the entry sits right after the previous one.
+    while at > start + 1 and lines[at - 1].strip() == "":
+        at -= 1
+    block = [""] + entry
+    if at >= len(lines) or lines[at].strip() != "":
+        block.append("")  # keep one blank line before whatever follows
+    return "\n".join(lines[:at] + block + lines[at:])
+
+
 def triage_to_backlog(warehouse_root: Path, ticket_id: str) -> tuple[InboxTicket, str]:
     ticket = get_ticket(warehouse_root, ticket_id)
     if not ticket:
         raise UsageError(f"Ticket not found: {ticket_id}")
-        
+
     if ticket.status != "open":
         raise UsageError(f"Ticket {ticket_id} is not open (status: {ticket.status})")
-        
+
     backlog_path = warehouse_root / "BACKLOG.md"
-    
     if not backlog_path.exists():
-        lines = [
-            "# Warehouse Backlog",
-            "",
-            "## 📋 In Progress",
-            "",
-            "## 📌 Backlog (Open Tasks)",
-            "",
-            "## ✅ Completed",
-            "",
-            "## 🧊 Icebox",
-            ""
-        ]
-        backlog_path.write_text("\n".join(lines), encoding="utf-8")
-        
+        backlog_path.write_text(NEW_BACKLOG, encoding="utf-8")
+
     content = backlog_path.read_text(encoding="utf-8")
-    
-    item_str = f"- **Item**: {ticket.item}" if ticket.item else ""
-    if item_str:
-        header_lines = f"- **Created**: {ticket.created[:10]}\n- **Project**: {ticket.project or 'N/A'}\n{item_str}"
-    else:
-        header_lines = f"- **Created**: {ticket.created[:10]}\n- **Project**: {ticket.project or 'N/A'}"
-        
-    task_text = f"### [{ticket_id}] {ticket.summary}\n"
-    task_text += f"- **Status**: `Open` | **Priority**: `{ticket.priority}` | **Labels**: `{ticket.category.title()}`, `Inbox`\n"
-    task_text += f"{header_lines}\n\n"
-    task_text += "#### Why\n"
-    task_text += f"{ticket.details or ticket.summary}\n\n"
-    task_text += "#### Wanted\n"
-    task_text += f"Address {ticket.type} submitted via warehouse inbox.\n\n"
-    task_text += "#### Acceptance Criteria\n"
-    task_text += f"- [ ] #1 Investigate and resolve {ticket_id}.\n"
-    task_text += "- [ ] #2 Verify and release fix if applicable.\n"
-    
-    marker = "## 📌 Backlog (Open Tasks)"
-    if marker not in content:
-        content += f"\n{marker}\n\n{task_text}"
-    else:
-        parts = content.split(marker, 1)
-        content = parts[0] + marker + "\n\n" + task_text + parts[1]
-        
+    content = _insert_by_priority(content, _entry_lines(ticket), ticket.priority)
     backlog_path.write_text(content, encoding="utf-8")
-    
+
     updated_ticket = update_ticket_status(warehouse_root, ticket_id, "triaged", "Triaged to BACKLOG.md")
-    
+
     return updated_ticket, ticket_id
+
+
+def backlog_section(warehouse_root: Path, ticket_id: str) -> str | None:
+    """The `## ` heading of the BACKLOG.md section holding the ticket's entry, or None."""
+    backlog_path = warehouse_root / "BACKLOG.md"
+    if not backlog_path.exists():
+        return None
+    section = None
+    for line in backlog_path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            section = line[3:].strip()
+        elif line.startswith(f"### [{ticket_id}]"):
+            return section
+    return None
+
+
+def close_ticket(warehouse_root: Path, ticket_id: str, new_status: str, message: str | None = None) -> InboxTicket:
+    """Resolve or reject a ticket, but only once its backlog entry has been closed.
+
+    Every ticket goes through BACKLOG.md: a resolved ticket's entry must be under
+    Completed, a rejected ticket's under the Icebox.
+    """
+    wanted = {"resolved": "Completed", "rejected": "Icebox"}[new_status]
+    if not get_ticket(warehouse_root, ticket_id):
+        raise UsageError(f"Ticket not found: {ticket_id}")
+    section = backlog_section(warehouse_root, ticket_id)
+    if section is None:
+        raise UsageError(
+            f"Ticket {ticket_id} has no entry in BACKLOG.md. Triage it first "
+            f"(warehouse inbox triage {ticket_id}), and move the entry to {wanted} when it is done."
+        )
+    if wanted not in section:
+        raise UsageError(
+            f"The BACKLOG.md entry for {ticket_id} is under '{section}'. "
+            f"Move it to {wanted}, with its Outcome, before marking the ticket {new_status}."
+        )
+    return update_ticket_status(warehouse_root, ticket_id, new_status, message)

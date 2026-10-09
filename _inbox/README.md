@@ -9,6 +9,11 @@ This directory (`_inbox/`) stores requests and issues filed against the AI Agent
 - **Resolved**: The ticket was addressed and fixed.
 - **Rejected**: The ticket will not be addressed (with reasons provided).
 
+These four are the only statuses. **Every ticket goes through `BACKLOG.md`:** triage it first, do the
+work against its backlog entry, and move the entry to Completed (or to the Icebox, if rejected) with
+its Outcome. Only then mark the ticket resolved or rejected. A ticket is never resolved straight from
+the inbox, even when the fix is quick.
+
 ## Ticket Structure
 
 Tickets are Markdown files named with an ID like `REQ-YYYYMMDD-slug.md` or `ISS-YYYYMMDD-slug.md`. They contain YAML frontmatter holding the ticket metadata and a markdown body detailing the context and resolution.

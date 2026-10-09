@@ -9,8 +9,24 @@ from warehouse_core.inbox import (
     get_ticket,
     list_tickets,
     update_ticket_status,
-    triage_to_backlog
+    triage_to_backlog,
+    backlog_section,
+    close_ticket,
 )
+from warehouse_core.errors import UsageError
+
+
+def _move_entry(backlog: Path, tid: str, section: str) -> None:
+    """Move a ticket's entry to the end of the section whose heading contains `section`."""
+    lines = backlog.read_text(encoding="utf-8").split("\n")
+    s = next(i for i, l in enumerate(lines) if l.startswith(f"### [{tid}]"))
+    e = next((i for i in range(s + 1, len(lines)) if lines[i].startswith(("### ", "## "))), len(lines))
+    entry = lines[s:e]
+    del lines[s:e]
+    h = next(i for i, l in enumerate(lines) if l.startswith("## ") and section in l)
+    end = next((i for i in range(h + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    lines[end:end] = entry
+    backlog.write_text("\n".join(lines), encoding="utf-8")
 
 def test_generate_ticket_id():
     existing = set()
@@ -100,6 +116,47 @@ def test_triage_to_backlog(tmp_path):
     assert f"### [{tid}] Need fix" in content
     assert "- **Status**: `Open`" in content
     assert "It is broken" in content
+    assert "#### Outcome" in content
+    assert "- **Project**:" not in content  # no project given, so no empty line for it
+
+def test_triage_creates_backlog_with_header(tmp_path):
+    ticket = create_ticket(tmp_path, "issue", "bug", "Need fix")
+    triage_to_backlog(tmp_path, ticket.id)
+    content = (tmp_path / "BACKLOG.md").read_text(encoding="utf-8")
+
+    assert "> **How this backlog is run**" in content
+    assert "## 🧊 Icebox (Not Doing / Rejected)" in content
+    assert content.index("## 📌 Backlog (Open Tasks)") < content.index(f"### [{ticket.id}]") < content.index("## ✅ Completed")
+
+def test_triage_places_tasks_by_priority(tmp_path):
+    ids = {}
+    for prio in ("P3", "P1", "P2", "P1"):
+        t = create_ticket(tmp_path, "issue", "bug", f"Task {prio} {len(ids)}", priority=prio)
+        triage_to_backlog(tmp_path, t.id)
+        ids[t.id] = prio
+    content = (tmp_path / "BACKLOG.md").read_text(encoding="utf-8")
+
+    order = sorted(ids, key=lambda tid: content.index(f"### [{tid}]"))
+    assert [ids[t] for t in order] == ["P1", "P1", "P2", "P3"]
+    # Same priority keeps arrival order: the first P1 stays ahead of the second.
+    p1 = [t for t in ids if ids[t] == "P1"]
+    assert order[:2] == p1
+    assert "\n\n\n" not in content
+
+def test_close_ticket_requires_closed_backlog_entry(tmp_path):
+    ticket = create_ticket(tmp_path, "issue", "bug", "Need fix")
+    with pytest.raises(UsageError, match="no entry in BACKLOG.md"):
+        close_ticket(tmp_path, ticket.id, "resolved")
+
+    triage_to_backlog(tmp_path, ticket.id)
+    assert backlog_section(tmp_path, ticket.id) == "📌 Backlog (Open Tasks)"
+    with pytest.raises(UsageError, match="Move it to Completed"):
+        close_ticket(tmp_path, ticket.id, "resolved")
+
+    _move_entry(tmp_path / "BACKLOG.md", ticket.id, "Completed")
+    with pytest.raises(UsageError, match="Move it to Icebox"):
+        close_ticket(tmp_path, ticket.id, "rejected")
+    assert close_ticket(tmp_path, ticket.id, "resolved", "Fixed").status == "resolved"
 
 # CLI TESTS
 def test_cli_request(wh):
@@ -135,23 +192,37 @@ def test_cli_inbox_resolve(wh):
     code, out = wh.run("inbox", "list", "--json")
     data = json.loads(out)
     tid = data["tickets"][0]["id"]
-    
+
+    wh.run("inbox", "triage", tid)
+    _move_entry(wh.root / "BACKLOG.md", tid, "Completed")
     code, out = wh.run("inbox", "resolve", tid, "--message", "Done")
     assert code == 0
-    
+
     code, out = wh.run("inbox", "show", tid)
     assert "Status: resolved" in out
     assert "Done" in out
+
+def test_cli_inbox_resolve_refuses_untriaged(wh):
+    wh.run("request", "Tool C2")
+    tid = json.loads(wh.run("inbox", "list", "--json")[1])["tickets"][0]["id"]
+
+    code, out = wh.run("inbox", "resolve", tid, "--message", "Done")
+    assert code == 2
+    assert "no entry in BACKLOG.md" in out
+    code, out = wh.run("inbox", "show", tid)
+    assert "Status: open" in out
 
 def test_cli_inbox_reject(wh):
     wh.run("request", "Tool D")
     code, out = wh.run("inbox", "list", "--json")
     data = json.loads(out)
     tid = data["tickets"][0]["id"]
-    
+
+    wh.run("inbox", "triage", tid)
+    _move_entry(wh.root / "BACKLOG.md", tid, "Icebox")
     code, out = wh.run("inbox", "reject", tid, "--reason", "No")
     assert code == 0
-    
+
     code, out = wh.run("inbox", "show", tid)
     assert "Status: rejected" in out
 

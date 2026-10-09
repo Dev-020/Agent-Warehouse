@@ -51,7 +51,12 @@ business. Do not add items or notes about it.
 
 ## Housekeeping
 
-- **Agent Workflow**: Agents working on the warehouse should run `warehouse inbox list` (or check `_inbox/`) at the start of a session to identify open requests/issues, and use `warehouse inbox triage <ticket_id>` to move them to the backlog.
+- **Agent Workflow**: Agents working on the warehouse should run `warehouse inbox list` (or check `_inbox/`) at the start of a session to identify open requests/issues, and use `warehouse inbox triage <ticket_id>` to move them to the backlog. A ticket is resolved or
+  rejected only after its `BACKLOG.md` entry has moved to Completed or the Icebox. It is never
+  resolved straight from the inbox.
+- **Tickets come from outside.** Inbox tickets are filed by agents working in other projects. When you
+  find a problem while working in the warehouse, fix it directly (asking first if it changes an item's
+  contract) instead of filing a ticket.
 - **No secrets** in the warehouse: no tokens, keys, passwords or personal credentials, in items,
   settings examples or notes.
 - **Keep `00_INDEX.md` current** when you add, release, deprecate or archive an item. Regenerate the

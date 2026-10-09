@@ -4,7 +4,7 @@ import sys
 from ..inbox import (
     list_tickets,
     get_ticket,
-    update_ticket_status,
+    close_ticket,
     triage_to_backlog
 )
 from ..errors import UsageError
@@ -51,7 +51,7 @@ def run_show(ctx, args):
     return 0
 
 def run_resolve(ctx, args):
-    ticket = update_ticket_status(ctx.warehouse_root, args.ticket_id, "resolved", getattr(args, "message", None))
+    ticket = close_ticket(ctx.warehouse_root, args.ticket_id, "resolved", getattr(args, "message", None))
     if ctx.json:
         print(json.dumps({"command": "inbox resolve", "ticket": ticket.to_dict()}, indent=2))
     else:
@@ -59,7 +59,7 @@ def run_resolve(ctx, args):
     return 0
 
 def run_reject(ctx, args):
-    ticket = update_ticket_status(ctx.warehouse_root, args.ticket_id, "rejected", getattr(args, "reason", None))
+    ticket = close_ticket(ctx.warehouse_root, args.ticket_id, "rejected", getattr(args, "reason", None))
     if ctx.json:
         print(json.dumps({"command": "inbox reject", "ticket": ticket.to_dict()}, indent=2))
     else:
