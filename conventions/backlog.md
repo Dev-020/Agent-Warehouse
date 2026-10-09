@@ -1,6 +1,6 @@
 ---
 id: convention/backlog
-version: 0.1.0
+version: 0.2.0
 status: draft
 summary: Project backlog in four levels (single file, split files, item folders, external tracker), with two entry styles, severity and likelihood, dependencies, evidence-based acceptance and append-only history.
 applies-to: [vault, codebase]
@@ -26,6 +26,25 @@ can't find it can't tell where the project should go.
 
 **This project:** layout `{{backlog_layout}}`. A single-file backlog lives in `{{backlog_file}}`. Every
 other layout keeps its files in `{{backlog_dir}}/`.
+
+## How strict is this?
+
+This convention is a framework, not a fixed implementation. A project may follow it word for word or
+change parts of it, as long as the core is there.
+
+| Every backlog keeps (the core) | A project may change |
+|---|---|
+| A header saying how the backlog is run (§3) | Section, file and folder names, and their emoji |
+| Stable IDs that are never reused | The ID format and prefixes |
+| A clear split between open and closed items, with a status on each | Status names, if the header maps them to the ones in §4.2 |
+| A priority on every open item | Priority names, if the header maps them to P1–P3 |
+| Evidence before a criterion is ticked or an item is closed | Entry style details: headings, field names, extra fields |
+| Nothing deleted. Corrections are dated notes. | Whether to use severity, likelihood, dependencies and parents |
+| One source of truth | The review interval, the ordering rules, the size thresholds |
+
+**Write every change in the header** (its `Deviations` line), so an agent reading the backlog follows
+the project's version instead of this text. Where the header and this convention disagree, the header
+wins.
 
 ---
 
@@ -218,6 +237,7 @@ happens.
 | Writes | `by hand, one writer at a time`, `by <named writer> only`, or `through <tool> only` (§6) |
 | Extra fields | Optional. Any metadata the project adds to entries (e.g. `**Item**`, `**Project**`). |
 | Labels | External tracker only: which labels stand for priority, severity and likelihood. |
+| Deviations | Optional. Where this backlog differs from the convention, e.g. `statuses: Todo, Doing, Done, Won't do`. |
 
 Change the header whenever the project changes level, ID scheme or entry style.
 
@@ -461,8 +481,9 @@ place.
 
 Under **tool only**:
 - The tool must support the project's layout.
-- Hand edits are forbidden, including "just adding a line". An agent that copies the syntax by hand
-  bypasses ID allocation, and that is how duplicate IDs happen.
+- Agents make no hand edits, not even "just adding a line", unless the user allows it. An agent that
+  copies the syntax by hand bypasses ID allocation, and that is how duplicate IDs happen.
+- The user may bypass the tool when they need to, using the tool or editing by hand as they choose.
 - The tool should refuse unknown ID prefixes, commit each change it makes, and leave nothing half-written
   when a step fails.
 - A pre-commit or merge check should reject duplicate IDs and hand edits to generated sections. It
@@ -512,9 +533,11 @@ Pick the highest-priority **ready** item (§4.6). Between items of equal priorit
 that is `In Progress` belongs to whoever claimed it.
 
 ### 7.6. Reviewing open tasks
-Open items left alone silt up the backlog until nobody reads it. Review an open item when its newest
-date, whether its Created date or its last dated note, is more than three months old. A phased project
-may instead review all open items at the end of each phase. For each item, do one of these:
+Open items left alone silt up the backlog until nobody reads it. Review an open item when it looks
+stale: as a rough guide, when its newest date (its Created date or its last dated note) is about three
+months old, or at the end of a phase in a phased project. This is a manual check that people do when
+they can, and agents mention when they notice stale items. Nothing needs to run it on a schedule. For
+each item, do one of these:
 - change its priority, with a dated note;
 - add a dated note that it still stands, and why;
 - set it to `Cancelled` with the reason, and move it to the Icebox or `closed/`.
@@ -628,6 +651,8 @@ worth it: history only grows.
 ## Changelog
 
 ### [Unreleased]
+
+### [0.2.0] - 2026-10-09
 #### Added
 - Four levels: single file, split files, item folders and external tracker, with when to move between
   them in both directions.
@@ -640,12 +665,16 @@ worth it: history only grows.
 - External-tracker layout, with how the convention maps onto a tracker and the rule of one source of
   truth.
 - "Who writes" rules: by hand, one named writer, or tool only, with the safeguards tool-only writing
-  needs. Any of them can be used at Levels 1–3.
+  needs. Any of them can be used at Levels 1–3. Under tool only, agents make no hand edits unless the
+  user allows it, and the user may bypass the tool.
+- "How strict is this?": the core every backlog keeps, what a project may change, and that the
+  header's `Deviations` line wins over the convention.
 - A required header stating the layout, ID scheme, entry style and who writes.
 - Compact entry style next to the full style, with guidance on which to pick, using both, and switching.
 - Optional severity and likelihood fields, with a table that sets the default priority from them.
 - Optional `Depends on` and `Parent` fields, a definition of a ready item, and how to choose what's next.
-- A review rule for open items older than three months, or at the end of each phase.
+- A manual review of open items that look stale: roughly three months untouched, or at the end of a
+  phase.
 - An imported ID scheme for tasks that come from another tracker.
 - Rules for changing an entry after it is claimed (dated notes), recording evidence, and linking
   commits.
