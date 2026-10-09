@@ -103,6 +103,8 @@ The case this example comes from is written up in [[shadow-cursor-063-triage]].
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.0] - 2026-10-09
 #### Added
 - Initial draft: three labels per finding (severity, likelihood, blocks), the fix-now rule, recording
   everything else as a task or in the Findings Register, the delay budget, and the report table.
