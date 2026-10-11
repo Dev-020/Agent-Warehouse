@@ -1,6 +1,6 @@
 ---
 id: protocol/phased-implementation
-version: 0.1.1
+version: 0.2.0
 status: draft
 summary: Plan, review, then build in phases with fresh or continued subagents, checkpoint commits, probe-backed reviews, one full test run per phase, and a session-log hand-over between phases.
 applies-to: [codebase]
@@ -8,13 +8,13 @@ settings:
   memory_folder:
     description: "Folder for agent notes, plans and briefs"
     default: "AI"
-  active_context_file:
-    description: "File that tracks the active task context, inside memory_folder"
-    default: "ACTIVE_CONTEXT.md"
+  active_context_folder:
+    description: "Folder inside memory_folder that holds the active-context router note and one file per work item"
+    default: "ACTIVE_CONTEXT"
   session_folder:
     description: "Folder where session logs are written"
     default: "AI/session"
-requires: [protocol/session-log@0.2, protocol/working-memory@0.1, protocol/worktree-claims@0.1, protocol/phase-staffing@0.1, template/plan-document@0.1, template/implementation-brief@0.1, template/review-request@0.1, architecture/codebuff-orchestration@0.1]
+requires: [protocol/session-log@0.2, protocol/working-memory@0.2, protocol/worktree-claims@0.1, protocol/phase-staffing@0.1, template/plan-document@0.1, template/implementation-brief@0.1, template/review-request@0.1, template/active-context@0.1, architecture/codebuff-orchestration@0.1]
 replaces: null
 ---
 
@@ -56,7 +56,7 @@ Reviewers always run on the strongest frontier reasoning model. Implementer mode
 | Step commits | The phase branch | Implementers | The checkpoints |
 | Review probes | The Orchestrator's scratchpad, `rv_<phase>/run_all.py` | Reviewer | Makes each finding reproducible and validates the fix |
 | Session log with hand-over | `{{session_folder}}/<date>-<phase>.md`, per [[session-log]] | Orchestrator | Carries state across phase boundaries and context compactions |
-| Active context | `{{memory_folder}}/{{active_context_file}}`, per [[working-memory]] | Orchestrator | The one file every session reads first |
+| Active context | `{{memory_folder}}/{{active_context_folder}}/`, per [[working-memory]] and [[active-context]]: a router note plus one file per work item | Orchestrator | The router is the one file every session reads first; the item's file holds the phase's current state |
 
 ## Stage 0 — Ground truth before design
 
@@ -83,7 +83,7 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
   → full suite once → merge → hand-over → compact if heavy
 ```
 
-1. **Re-read** the active context, the latest session log, and the plan section for this phase. After compaction, nothing else from before it is assumed.
+1. **Re-read** the active-context router, this item's active-context file, the latest session log, and the plan section for this phase. After compaction, nothing else from before it is assumed.
 2. **Staff the phase and write the brief.**
    - Decide staffing shape (size, coupling, model) per [[phase-staffing]].
    - Write the brief from [[implementation-brief]], opening with the staffing row and documenting settled **Orchestrator decisions**. Split into checkpoint steps. Commit the brief.
@@ -99,7 +99,7 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 10. **Merge** into the integration branch with `--no-ff`. Remove worktree and branch.
 11. **Write the hand-over.** Update:
     - Plan build-order table (done, merge commit, suite count).
-    - Active context.
+    - Active context: empty the item's file per [[working-memory]] ("Keeping it small"), so each line goes to the session log, the plan, [[issue-triage]] or the project's instruction file, or stays because it is still current. Then update the item's row in the router.
     - A session log per [[session-log]] carrying: interface delivered, decisions made, gotchas discovered, and open threads assigned to named later phases.
 12. **Compact if the phase made the context heavy.** If review, fix, and verification rounds accumulated significant tokens, ask the user to run `/compact`. If the phase was light, skip and proceed directly to the next phase.
 
@@ -143,6 +143,17 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 ## Changelog
 
 ### [Unreleased]
+
+### [0.2.0] - 2026-10-12
+#### Changed
+- **BREAKING:** the active context is a folder (a router note plus one file per work item), following
+  `protocol/working-memory@0.2` and `template/active-context`. The setting `active_context_file`
+  (default `ACTIVE_CONTEXT.md`) is replaced by `active_context_folder` (default `ACTIVE_CONTEXT`).
+  **Migration:** follow the migration steps in `protocol/working-memory` 0.2; if `.warehouse.yml` sets
+  `active_context_file`, replace it with `active_context_folder`.
+- Stage 2 step 1 re-reads the router and the item's file; the step 11 hand-over now empties the item's
+  file line by line, then updates its row in the router.
+- Requires `protocol/working-memory@0.2` and `template/active-context@0.1`.
 
 ### [0.1.1] - 2026-10-06
 #### Fixed
