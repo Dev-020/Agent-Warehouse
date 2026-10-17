@@ -1,6 +1,6 @@
 ---
 id: protocol/phased-implementation
-version: 0.2.0
+version: 0.3.0
 status: draft
 summary: Plan, review, then build in phases with fresh or continued subagents, checkpoint commits, probe-backed reviews, one full test run per phase, and a session-log hand-over between phases.
 applies-to: [codebase]
@@ -148,6 +148,8 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 ## Changelog
 
 ### [Unreleased]
+
+### [0.3.0] - 2026-10-17
 #### Added
 - Terms: a *brief* is a task given to an agent; a *hand-over* is state passed between sessions.
 - A probe-brief artifact (`template/probe-brief`), used in Stage 0 when a probe agent measures.
