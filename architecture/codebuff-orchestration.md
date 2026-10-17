@@ -1,6 +1,6 @@
 ---
 id: architecture/codebuff-orchestration
-version: 0.1.1
+version: 0.1.2
 status: draft
 summary: Distilled Codebuff multi-agent architecture, cost scaling analysis, and tiered orchestration.
 applies-to: [vault, codebase]
@@ -120,6 +120,8 @@ The original Codebuff framework introduced 7 distinct roles. Empirical testing r
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.2] - 2026-10-17
 #### Changed
 - Tier 2's "Git Diff Handoff" pattern is now the "Git Diff Review" pattern: what the author passes
   is the reviewer's brief, not a hand-over, matching `protocol/phased-implementation`'s terms.
