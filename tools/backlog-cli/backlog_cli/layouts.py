@@ -19,6 +19,35 @@ PRIORITY_LEVELS = ("P1", "P2", "P3")
 PRIORITY_RANK = {"P1": 1, "P2": 2, "P3": 3}
 
 
+def normalize_id(raw_id: str) -> str:
+    """Normalize task ID the way id_matches compares them (Decision 28)."""
+    clean = raw_id.strip().strip("'\"").strip("[]")
+    if clean.startswith("#"):
+        return clean
+    if clean.isdigit():
+        return f"#{clean}"
+    return clean
+
+
+def normalize_item_fields(fields: dict[str, Any]) -> dict[str, Any]:
+    """Normalize metadata fields according to Decision 28."""
+    if "labels" in fields:
+        fields["labels"] = parse_labels_list(fields["labels"])
+    else:
+        fields["labels"] = []
+    if "depends_on" in fields:
+        raw_deps = fields["depends_on"]
+        if isinstance(raw_deps, list):
+            fields["depends_on"] = [normalize_id(str(x)) for x in raw_deps if str(x).strip()]
+        else:
+            fields["depends_on"] = [normalize_id(x.strip()) for x in str(raw_deps).split(",") if x.strip()]
+    else:
+        fields["depends_on"] = []
+    if "parent" in fields and fields["parent"]:
+        fields["parent"] = normalize_id(str(fields["parent"]))
+    return fields
+
+
 def make_slug(title: str) -> str:
     """Generate a slug from title: lowercase, non-alphanumerics to -, cut to at most 50 chars at - (F12)."""
     s = title.lower()
@@ -287,10 +316,29 @@ def item_from_entry_lines(
                     m_rs = re.search(r"\*\*Resolved\*\*:\s*([0-9-]+)", p)
                     if m_rs:
                         fields["resolved"] = m_rs.group(1).strip()
+                if "**Severity**:" in p:
+                    m_sv = re.search(r"\*\*Severity\*\*:\s*`?([^`*]+)`?", p)
+                    if m_sv:
+                        fields["severity"] = m_sv.group(1).strip()
+                if "**Likelihood**:" in p:
+                    m_lk = re.search(r"\*\*Likelihood\*\*:\s*`?([^`*]+)`?", p)
+                    if m_lk:
+                        fields["likelihood"] = m_lk.group(1).strip()
+                if re.search(r"\*\*Depends [Oo]n\*\*:", p):
+                    m_dp = re.search(r"\*\*Depends [Oo]n\*\*:\s*(.*)$", p)
+                    if m_dp:
+                        raw_deps = [x.strip() for x in m_dp.group(1).split(",") if x.strip()]
+                        fields["depends_on"] = [normalize_id(x) for x in raw_deps]
+                if "**Parent**:" in p:
+                    m_pt = re.search(r"\*\*Parent\*\*:\s*`?([^`*]+)`?", p)
+                    if m_pt:
+                        fields["parent"] = normalize_id(m_pt.group(1).strip())
         else:
             if line.strip():
                 metadata_done = True
             body_lines.append(line)
+
+    fields = normalize_item_fields(fields)
 
     raw = line_ending.join(entry_lines)
     body = "\n".join(body_lines)
@@ -445,6 +493,10 @@ class BaseLayout(ABC):
 
     @abstractmethod
     def set_status(self, task_id: str, status: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
+        pass
+
+    @abstractmethod
+    def set_priority(self, task_id: str, priority: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         pass
 
     @abstractmethod
@@ -740,6 +792,35 @@ class SingleFileLayout(BaseLayout):
         write_text_preserving(self.file, lines, le, bom, tail=tail)
         return [self.file], []
 
+    def set_priority(self, task_id: str, priority: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
+        lines, le, bom, tail, sections = self._load()
+        res = file_find_entry(lines, task_id, path=self.file, line_ending=le)
+        if not res:
+            raise TaskError(f"Task [{task_id}] not found in {self.file}")
+        _, _, item = res
+        if item.priority == priority:
+            raise TaskError(f"[{task_id}] already has priority {priority}")
+
+        if item.status == "Open":
+            entry_lines, _ = file_extract_entry(lines, task_id)
+            meta_start, meta_end = entry_get_metadata_span(entry_lines)
+            for i in range(meta_start, meta_end):
+                if entry_lines[i].startswith("- **Status**:"):
+                    entry_lines[i] = re.sub(r"\*\*Priority\*\*:\s*`?[^`*|]+`?", f"**Priority**: `{priority}`", entry_lines[i])
+                    break
+            sections = find_sections(lines)
+            file_insert_entry_by_priority(lines, sections, entry_lines)
+        else:
+            start, end, _ = res
+            meta_start, meta_end = entry_get_metadata_span(lines[start:end])
+            for i in range(start + meta_start, start + meta_end):
+                if lines[i].startswith("- **Status**:"):
+                    lines[i] = re.sub(r"\*\*Priority\*\*:\s*`?[^`*|]+`?", f"**Priority**: `{priority}`", lines[i])
+                    break
+
+        write_text_preserving(self.file, lines, le, bom, tail=tail)
+        return [self.file], []
+
     def close(self, task_id: str, status: str, outcome: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         lines, le, bom, tail, sections = self._load()
         entry_lines, _ = file_extract_entry(lines, task_id)
@@ -747,7 +828,8 @@ class SingleFileLayout(BaseLayout):
         entry_set_status(entry_lines, status, resolved_date=today)
         entry_set_outcome(entry_lines, outcome, today)
         sections = find_sections(lines)
-        file_insert_entry_at_bottom(lines, sections, entry_lines, "completed")
+        target_sec = "icebox" if status in ("Rejected", "Cancelled") else "completed"
+        file_insert_entry_at_bottom(lines, sections, entry_lines, target_sec)
         write_text_preserving(self.file, lines, le, bom, tail=tail)
         return [self.file], []
 
@@ -872,6 +954,52 @@ class SplitFilesLayout(BaseLayout):
             write_text_preserving(self.closed_file, closed_lines, c_le, c_bom, tail=c_tail)
             return [self.closed_file], []
 
+    def set_priority(self, task_id: str, priority: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
+        target = self.find(task_id)
+        if not target or not target.path:
+            raise TaskError(f"Task [{task_id}] not found in backlog")
+        if target.priority == priority:
+            raise TaskError(f"[{task_id}] already has priority {priority}")
+
+        target_file = target.path
+        if target_file == self.open_file:
+            lines, le, bom, tail, sections = self._load_open()
+            res = file_find_entry(lines, task_id, path=target_file, line_ending=le)
+            if not res:
+                raise TaskError(f"Task [{task_id}] not found in {target_file}")
+            _, _, item = res
+            if item.status == "Open":
+                entry_lines, _ = file_extract_entry(lines, task_id)
+                meta_start, meta_end = entry_get_metadata_span(entry_lines)
+                for i in range(meta_start, meta_end):
+                    if entry_lines[i].startswith("- **Status**:"):
+                        entry_lines[i] = re.sub(r"\*\*Priority\*\*:\s*`?[^`*|]+`?", f"**Priority**: `{priority}`", entry_lines[i])
+                        break
+                sections = find_sections(lines)
+                file_insert_entry_by_priority(lines, sections, entry_lines)
+            else:
+                start, end, _ = res
+                meta_start, meta_end = entry_get_metadata_span(lines[start:end])
+                for i in range(start + meta_start, start + meta_end):
+                    if lines[i].startswith("- **Status**:"):
+                        lines[i] = re.sub(r"\*\*Priority\*\*:\s*`?[^`*|]+`?", f"**Priority**: `{priority}`", lines[i])
+                        break
+            write_text_preserving(self.open_file, lines, le, bom, tail=tail)
+            return [self.open_file], []
+        else:
+            lines, le, bom, tail, sections = self._load_closed()
+            res = file_find_entry(lines, task_id, path=target_file, line_ending=le)
+            if not res:
+                raise TaskError(f"Task [{task_id}] not found in {target_file}")
+            start, end, _ = res
+            meta_start, meta_end = entry_get_metadata_span(lines[start:end])
+            for i in range(start + meta_start, start + meta_end):
+                if lines[i].startswith("- **Status**:"):
+                    lines[i] = re.sub(r"\*\*Priority\*\*:\s*`?[^`*|]+`?", f"**Priority**: `{priority}`", lines[i])
+                    break
+            write_text_preserving(self.closed_file, lines, le, bom, tail=tail)
+            return [self.closed_file], []
+
     def close(self, task_id: str, status: str, outcome: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         target = self.find(task_id)
         if not target or not target.span or not target.path:
@@ -886,7 +1014,8 @@ class SplitFilesLayout(BaseLayout):
             write_text_preserving(self.open_file, open_lines, o_le, o_bom, tail=o_tail)
 
             closed_lines, c_le, c_bom, c_tail, sections = self._load_closed()
-            file_insert_entry_at_bottom(closed_lines, sections, entry_lines, "completed")
+            target_sec = "icebox" if status in ("Rejected", "Cancelled") else "completed"
+            file_insert_entry_at_bottom(closed_lines, sections, entry_lines, target_sec)
             write_text_preserving(self.closed_file, closed_lines, c_le, c_bom, tail=c_tail)
             return [self.open_file, self.closed_file], []
         else:
@@ -895,7 +1024,8 @@ class SplitFilesLayout(BaseLayout):
             entry_set_status(entry_lines, status, resolved_date=today)
             entry_set_outcome(entry_lines, outcome, today)
             sections = find_sections(closed_lines)
-            file_insert_entry_at_bottom(closed_lines, sections, entry_lines, "completed")
+            target_sec = "icebox" if status in ("Rejected", "Cancelled") else "completed"
+            file_insert_entry_at_bottom(closed_lines, sections, entry_lines, target_sec)
             write_text_preserving(self.closed_file, closed_lines, c_le, c_bom, tail=c_tail)
             return [self.closed_file], []
 
@@ -978,6 +1108,7 @@ class ItemFoldersLayout(BaseLayout):
                 if file_to_read:
                     text, _, _, _ = read_text_preserving(file_to_read)
                     fields, body, _ = parse_frontmatter(text)
+                    fields = normalize_item_fields(fields)
                     tid = str(fields.get("id", "")).strip()
                     if not tid:
                         fname = file_to_read.stem
@@ -1009,6 +1140,7 @@ class ItemFoldersLayout(BaseLayout):
             if p:
                 text, _, _, _ = read_text_preserving(p)
                 fields, body, _ = parse_frontmatter(text)
+                fields = normalize_item_fields(fields)
                 tid = str(fields.get("id", "")).strip()
                 if not tid:
                     fname = p.stem
@@ -1121,6 +1253,20 @@ class ItemFoldersLayout(BaseLayout):
                 main_file = dest / file_path.name
                 return [main_file], [(folder, dest)]
 
+        return [file_path], []
+
+    def set_priority(self, task_id: str, priority: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
+        target = self.find(task_id)
+        if not target or not target.path:
+            raise TaskError(f"Task [{task_id}] not found in backlog")
+        if target.priority == priority:
+            raise TaskError(f"[{task_id}] already has priority {priority}")
+
+        file_path = target.path
+        text, le, bom, tail = read_text_preserving(file_path)
+        updates = {"priority": priority}
+        new_text = update_frontmatter(text, updates)
+        write_text_preserving(file_path, new_text, le, bom, tail=tail)
         return [file_path], []
 
     def close(self, task_id: str, status: str, outcome: str) -> tuple[list[Path], list[tuple[Path, Path]]]:

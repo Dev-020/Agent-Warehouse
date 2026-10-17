@@ -750,3 +750,195 @@ def test_f10_labels_format():
     assert parsed.fields.get("labels") == ["Bug", "UI"]
 
 
+def test_decision_28_metadata_fields_single(tmp_path: Path):
+    """Decision 28: Item.fields gets labels, created, severity, likelihood, depends_on, parent, resolved on single layout."""
+    text = (
+        "# Backlog\n\n## 📋 In Progress\n\n## 📌 Backlog (Open Tasks)\n\n"
+        "### [#042] Task with full metadata\n"
+        "- **Status**: `Open` | **Priority**: `P2` | **Labels**: `Bug`, `UI`\n"
+        "- **Created**: 2026-10-08\n"
+        "- **Severity**: `Major` | **Likelihood**: `Occasional`\n"
+        "- **Depends on**: [#039], #041\n"
+        "- **Parent**: [#038]\n"
+        "- **Resolved**: 2026-10-12\n\n"
+        "## ✅ Completed\n\n## 🧊 Icebox\n"
+    )
+    p = tmp_path / "BACKLOG.md"
+    p.write_text(text, encoding="utf-8")
+    layout = SingleFileLayout(p)
+    it = layout.find("#042")
+    assert it is not None
+    assert it.fields["labels"] == ["Bug", "UI"]
+    assert it.fields["created"] == "2026-10-08"
+    assert it.fields["severity"] == "Major"
+    assert it.fields["likelihood"] == "Occasional"
+    assert it.fields["depends_on"] == ["#039", "#041"]
+    assert it.fields["parent"] == "#038"
+    assert it.fields["resolved"] == "2026-10-12"
+
+
+def test_decision_28_metadata_fields_split(tmp_path: Path):
+    """Decision 28: Metadata fields on split layout."""
+    bdir = tmp_path / "BACKLOG"
+    bdir.mkdir()
+    (bdir / "00_BACKLOG.md").write_text("# Backlog\n", encoding="utf-8")
+    (bdir / "Closed.md").write_text("## ✅ Completed\n\n## 🧊 Icebox\n", encoding="utf-8")
+    open_text = (
+        "## 📋 In Progress\n\n## 📌 Backlog (Open Tasks)\n\n"
+        "### [WH-10] Prefixed task with metadata\n"
+        "- **Status**: `Open` | **Priority**: `P1` | **Labels**: `Tool`\n"
+        "- **Created**: 2026-10-09\n"
+        "- **Severity**: `Critical` | **Likelihood**: `Frequent`\n"
+        "- **Depends on**: WH-1, [WH-2]\n"
+        "- **Parent**: WH-0\n\n"
+    )
+    (bdir / "Open.md").write_text(open_text, encoding="utf-8")
+    layout = SplitFilesLayout(bdir)
+    it = layout.find("WH-10")
+    assert it is not None
+    assert it.fields["labels"] == ["Tool"]
+    assert it.fields["created"] == "2026-10-09"
+    assert it.fields["severity"] == "Critical"
+    assert it.fields["likelihood"] == "Frequent"
+    assert it.fields["depends_on"] == ["WH-1", "WH-2"]
+    assert it.fields["parent"] == "WH-0"
+
+
+def test_decision_28_metadata_fields_folders(tmp_path: Path):
+    """Decision 28: Metadata fields on item folders layout."""
+    bdir = tmp_path / "BACKLOG"
+    (bdir / "open").mkdir(parents=True)
+    (bdir / "closed").mkdir(parents=True)
+    (bdir / "00_BACKLOG.md").write_text("# Backlog\n", encoding="utf-8")
+    item_text = (
+        "---\n"
+        'id: "#042"\n'
+        'title: "Folder item with metadata"\n'
+        "status: Open\n"
+        "priority: P2\n"
+        "labels: [Bug, UI]\n"
+        "created: 2026-10-08\n"
+        "severity: Major\n"
+        "likelihood: Occasional\n"
+        'depends_on: ["#039", "#041"]\n'
+        'parent: "#038"\n'
+        "resolved: 2026-10-12\n"
+        "---\n\n"
+        "# [#042] Folder item with metadata\n"
+    )
+    (bdir / "open" / "042-item.md").write_text(item_text, encoding="utf-8")
+    layout = ItemFoldersLayout(bdir)
+    it = layout.find("#042")
+    assert it is not None
+    assert it.fields["labels"] == ["Bug", "UI"]
+    assert it.fields["created"] == "2026-10-08"
+    assert it.fields["severity"] == "Major"
+    assert it.fields["likelihood"] == "Occasional"
+    assert it.fields["depends_on"] == ["#039", "#041"]
+    assert it.fields["parent"] == "#038"
+    assert it.fields["resolved"] == "2026-10-12"
+
+
+def test_set_priority_single(tmp_path: Path):
+    """set_priority updates priority and moves Open task by priority, leaves In Progress in place (Single)."""
+    text = (
+        "# Backlog\n\n"
+        "## 📋 In Progress\n\n"
+        "### [#001] In progress task\n"
+        "- **Status**: `In Progress` | **Priority**: `P2`\n"
+        "- **Created**: 2026-10-01\n\n"
+        "## 📌 Backlog (Open Tasks)\n\n"
+        "### [#010] P1 task\n"
+        "- **Status**: `Open` | **Priority**: `P1`\n"
+        "- **Created**: 2026-10-01\n\n"
+        "### [#020] P3 task to elevate\n"
+        "- **Status**: `Open` | **Priority**: `P3`\n"
+        "- **Created**: 2026-10-01\n\n"
+        "## ✅ Completed\n\n## 🧊 Icebox\n"
+    )
+    p = tmp_path / "BACKLOG.md"
+    p.write_text(text, encoding="utf-8")
+    layout = SingleFileLayout(p)
+
+    # Refuses same priority
+    with pytest.raises(TaskError, match="already has priority P3"):
+        layout.set_priority("#020", "P3")
+
+    # Elevate P3 to P1: moves before lower priority / after same priority
+    layout.set_priority("#020", "P1")
+    after = p.read_text(encoding="utf-8")
+    assert "**Priority**: `P1`" in after
+    idx_p1 = after.index("### [#010]")
+    idx_elevated = after.index("### [#020]")
+    idx_completed = after.index("## ✅ Completed")
+    assert idx_p1 < idx_elevated < idx_completed
+
+    # Change In Progress task priority: stays in In Progress section
+    layout.set_priority("#001", "P1")
+    after2 = p.read_text(encoding="utf-8")
+    idx_prog = after2.index("## 📋 In Progress")
+    idx_open = after2.index("## 📌 Backlog (Open Tasks)")
+    idx_001 = after2.index("### [#001]")
+    assert idx_prog < idx_001 < idx_open
+
+
+def test_set_priority_split(tmp_path: Path):
+    """set_priority on split layout."""
+    bdir = tmp_path / "BACKLOG"
+    bdir.mkdir()
+    (bdir / "00_BACKLOG.md").write_text("# Backlog\n", encoding="utf-8")
+    (bdir / "Closed.md").write_text("## ✅ Completed\n\n## 🧊 Icebox\n", encoding="utf-8")
+    open_text = (
+        "## 📋 In Progress\n\n"
+        "### [#001] In progress task\n"
+        "- **Status**: `In Progress` | **Priority**: `P2`\n"
+        "- **Created**: 2026-10-01\n\n"
+        "## 📌 Backlog (Open Tasks)\n\n"
+        "### [#010] P1 task\n"
+        "- **Status**: `Open` | **Priority**: `P1`\n"
+        "- **Created**: 2026-10-01\n\n"
+        "### [#020] P3 task to elevate\n"
+        "- **Status**: `Open` | **Priority**: `P3`\n"
+        "- **Created**: 2026-10-01\n\n"
+    )
+    (bdir / "Open.md").write_text(open_text, encoding="utf-8")
+    layout = SplitFilesLayout(bdir)
+
+    with pytest.raises(TaskError, match="already has priority P3"):
+        layout.set_priority("#020", "P3")
+
+    layout.set_priority("#020", "P1")
+    after = (bdir / "Open.md").read_text(encoding="utf-8")
+    assert "**Priority**: `P1`" in after
+
+    layout.set_priority("#001", "P1")
+    after2 = (bdir / "Open.md").read_text(encoding="utf-8")
+    idx_prog = after2.index("## 📋 In Progress")
+    idx_open = after2.index("## 📌 Backlog (Open Tasks)")
+    idx_001 = after2.index("### [#001]")
+    assert idx_prog < idx_001 < idx_open
+
+
+def test_set_priority_folders(tmp_path: Path):
+    """set_priority on item folders layout."""
+    bdir = tmp_path / "BACKLOG"
+    (bdir / "open").mkdir(parents=True)
+    (bdir / "closed").mkdir(parents=True)
+    (bdir / "00_BACKLOG.md").write_text("# Backlog\n", encoding="utf-8")
+    item_file = bdir / "open" / "020-item.md"
+    item_file.write_text(
+        "---\nid: '#020'\ntitle: 'Polish UI'\nstatus: Open\npriority: P3\n---\n\n# [#020] Polish UI\n",
+        encoding="utf-8",
+    )
+    layout = ItemFoldersLayout(bdir)
+
+    with pytest.raises(TaskError, match="already has priority P3"):
+        layout.set_priority("#020", "P3")
+
+    layout.set_priority("#020", "P1")
+    text = item_file.read_text(encoding="utf-8")
+    assert "priority: P1" in text
+    assert item_file.is_file()
+
+
+

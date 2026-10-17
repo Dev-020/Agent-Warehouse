@@ -191,20 +191,38 @@ def worktree_list(cwd: str | Path | None = None) -> list[dict[str, str]]:
             }
         )
 
-    if result and (Path(result[0]["path"]) / "objects").is_dir():
+    return result
+
+
+def primary_tree(cwd: str | Path | None = None) -> Path:
+    """Return the primary working tree path adhering to Decision 27 (F16)."""
+    root = repo_root(cwd)
+    trees = worktree_list(root)
+    if not trees:
+        return root
+
+    first_path = Path(trees[0]["path"]).resolve()
+    is_git_folder = (first_path / "objects").is_dir() and not (first_path / ".git").exists()
+
+    if not is_git_folder:
+        return first_path
+
+    dot_git = root / ".git"
+    if dot_git.is_file():
         try:
-            r = repo_root(cwd or Path.cwd())
-            dot_git = r / ".git"
-            if dot_git.is_file():
-                text = dot_git.read_text(encoding="utf-8", errors="replace").strip()
-                if text.startswith("gitdir:"):
-                    target_gitdir = (r / text.split(":", 1)[1].strip()).resolve()
-                    if target_gitdir == Path(result[0]["path"]).resolve():
-                        result[0]["path"] = str(r).replace("\\", "/")
+            text = dot_git.read_text(encoding="utf-8", errors="replace").strip()
+            if text.startswith("gitdir:"):
+                target = (root / text.split(":", 1)[1].strip()).resolve()
+                if target == first_path:
+                    return root
         except Exception:
             pass
 
-    return result
+    raise TaskError(
+        "This repository's git folder is outside the tree, and git doesn't record "
+        "where the main tree is. Run this command from the main tree."
+    )
+
 
 
 def branch_created_at(branch: str, cwd: str | Path | None = None) -> str | None:

@@ -29,6 +29,7 @@ from backlog_cli.gitops import (
     git,
     git_dir,
     git_ok,
+    primary_tree,
     repo_root,
     worktree_list,
 )
@@ -279,6 +280,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     git_source = detect_git_discovery(root)
     notes.append(f"git: {git_source}")
 
+    # Report main tree (Decision 27)
+    try:
+        main_t = primary_tree(root)
+        notes.append(f"main tree: {main_t}")
+    except TaskError:
+        notes.append("main tree: unknown from here (run from the main tree)")
+
+
     if args.init:
         # Decision 6: doctor --init no longer writes backlog.file
         wroot = (root.parent / "worktrees").resolve()
@@ -405,27 +414,13 @@ def cmd_open(args: argparse.Namespace) -> int:
         check_no_git_dir_env()
     cwd = Path.cwd()
     root = repo_root(cwd)
-    trees = worktree_list(root)
     current_branch = git("branch", "--show-current", cwd=root, check=False).strip()
 
-    is_secondary_worktree = False
-    try:
-        gd = git("rev-parse", "--git-dir", cwd=root, check=False)
-        gcd = git("rev-parse", "--git-common-dir", cwd=root, check=False)
-        if Path(gd).resolve() != Path(gcd).resolve():
-            is_secondary_worktree = True
-    except Exception:
-        pass
-
-    # Decision 16 (S9): Inside claim/* worktree, write and commit there; otherwise primary worktree
-    if current_branch.startswith(BRANCH_PREFIX) or not is_secondary_worktree:
+    # Decision 27 (S9): Inside claim/* worktree, write and commit there; otherwise primary_tree(root)
+    if current_branch.startswith(BRANCH_PREFIX):
         target_root = root
     else:
-        primary_candidate = Path(trees[0]["path"]).resolve() if trees else root
-        if (primary_candidate / "objects").is_dir() and not (primary_candidate / ".git").exists():
-            target_root = root
-        else:
-            target_root = primary_candidate
+        target_root = primary_tree(root)
 
     settings = load_settings(target_root)
     layout = get_layout(settings)
@@ -601,13 +596,12 @@ def cmd_close(args: argparse.Namespace) -> int:
     if not git_ok("show-ref", "--verify", "--quiet", f"refs/heads/{base}", cwd=root):
         raise TaskError(f"base branch '{base}' not found; set backlog.baseBranch")
 
-    # F9: Primary tree must be on the base branch
-    trees = worktree_list(root)
-    primary_tree = trees[0]
-    primary_path = Path(primary_tree["path"]).resolve()
-    primary_branch = primary_tree.get("branch")
+    # Decision 27 / F9: Primary tree must be found via primary_tree(root) and be on base branch
+    primary_path = primary_tree(root)
+    primary_branch = git("branch", "--show-current", cwd=primary_path, check=False).strip()
     if primary_branch != base:
         raise TaskError(f"Primary tree {primary_path} is on branch '{primary_branch}', expected base branch '{base}'.")
+    trees = worktree_list(root)
 
     if not branch_exists(branch, cwd=root):
         raise TaskError(f"Task [{task_id}] is not claimed (branch {branch} does not exist).")
@@ -780,3 +774,183 @@ def cmd_abandon(args: argparse.Namespace) -> int:
     git("branch", "-D", branch, cwd=root)
     print(f"Abandoned claim [{task_id}] (deleted branch {branch}).")
     return 0
+
+
+def _handle_reject_or_cancel(args: argparse.Namespace, new_status: str) -> int:
+    check_no_git_dir_env()
+    reason = args.reason.strip() if getattr(args, "reason", None) else ""
+    if not reason:
+        raise TaskError(f"--reason is required for {new_status.lower()}")
+
+    cwd = Path.cwd()
+    root = repo_root(cwd)
+    settings = load_settings(root)
+    base = settings.base_branch
+
+    # F5: check base branch exists at the start
+    if not git_ok("show-ref", "--verify", "--quiet", f"refs/heads/{base}", cwd=root):
+        raise TaskError(f"base branch '{base}' not found; set backlog.baseBranch")
+
+    # Decision 27: Written in primary tree
+    primary_path = primary_tree(root)
+
+    # F9: Primary tree must be on the base branch
+    primary_branch = git("branch", "--show-current", cwd=primary_path, check=False).strip()
+    if primary_branch != base:
+        raise TaskError(f"Primary tree {primary_path} is on branch '{primary_branch}', expected base branch '{base}'.")
+
+    task_id = args.id.strip().strip("'\"").strip("[]")
+    clean_id = task_id.lstrip("#")
+    branch = f"{BRANCH_PREFIX}{clean_id}"
+
+    # Decision 29: The item must have no claim/<ID> branch
+    if branch_exists(branch, cwd=root):
+        raise TaskError(f"[{task_id}] is claimed; abandon or close the claim first")
+
+    primary_settings = load_settings(primary_path)
+    primary_layout = get_layout(primary_settings)
+    item = primary_layout.find(task_id)
+    if not item:
+        raise TaskError(f"Task [{task_id}] not found in backlog on branch '{base}'.")
+
+    # Decision 29: The item must be Open
+    if item.status != "Open":
+        raise TaskError(f"[{task_id}] is {item.status}; only Open items can be rejected or cancelled")
+
+    # Dependents (convention §4.6): every Open or In Progress item in the same tree
+    # whose depends_on lists the ID gets a dated note
+    dependents: list[Item] = []
+    for it in primary_layout.items():
+        if it.status in ("Open", "In Progress") and not id_matches(it.id, item.id):
+            deps = it.fields.get("depends_on", [])
+            if any(id_matches(d, item.id) for d in deps):
+                dependents.append(it)
+
+    # Warning for items on claim branches (Decision 29)
+    for cb in claim_branches(root):
+        cb_id = cb[len(BRANCH_PREFIX) :]
+        cb_item = find_item_on_branch(root, cb, cb_id, primary_settings)
+        if cb_item and any(id_matches(d, item.id) for d in cb_item.fields.get("depends_on", [])):
+            if not primary_layout.find(cb_item.id):
+                print(f"Warning: item [{cb_item.id}] on branch {cb} depends on [{item.id}]")
+
+    verb = "rejected" if new_status == "Rejected" else "cancelled"
+    dep_note = (
+        f"Depends on [{item.id}], which was {verb}: {reason}. "
+        "Check whether this item is still blocked or needs rethinking."
+    )
+
+    pre_paths = set(primary_layout.paths_for(item.id))
+    for dep in dependents:
+        pre_paths.update(primary_layout.paths_for(dep.id))
+
+    def do_action():
+        written_paths = []
+        all_moves = []
+        w_paths, moves = primary_layout.close(item.id, new_status, reason)
+        written_paths.extend(w_paths)
+        all_moves.extend(moves)
+        for dep in dependents:
+            w_paths, moves = primary_layout.append_note(dep.id, dep_note)
+            written_paths.extend(w_paths)
+            all_moves.extend(moves)
+        return written_paths, all_moves
+
+    action_verb = "reject" if new_status == "Rejected" else "cancel"
+    commit_msg = f"chore(backlog): {action_verb} [{item.id}]"[:72]
+    safe_commit(primary_path, commit_msg, list(pre_paths), do_action)
+    print(f"{new_status} [{item.id}]: {reason}")
+    return 0
+
+
+def cmd_reject(args: argparse.Namespace) -> int:
+    """Reject an open backlog task with a reason (Decision 29)."""
+    return _handle_reject_or_cancel(args, "Rejected")
+
+
+def cmd_cancel(args: argparse.Namespace) -> int:
+    """Cancel an open backlog task with a reason (Decision 29)."""
+    return _handle_reject_or_cancel(args, "Cancelled")
+
+
+def cmd_amend(args: argparse.Namespace) -> int:
+    """Amend a backlog task with notes or priority updates (Decision 30)."""
+    check_no_git_dir_env()
+    task_id = args.id.strip().strip("'\"").strip("[]")
+    note = args.note.strip() if getattr(args, "note", None) else None
+    priority = args.priority.upper() if getattr(args, "priority", None) else None
+
+    if not note and not priority:
+        raise TaskError("amend requires at least one of --note or --priority")
+
+    if priority and not note:
+        raise TaskError("--priority requires --note with the reason")
+
+    if priority and priority not in PRIORITY_LEVELS:
+        raise TaskError(f"Invalid priority {priority!r}. Must be one of {PRIORITY_LEVELS}")
+
+    cwd = Path.cwd()
+    root = repo_root(cwd)
+    settings = load_settings(root)
+    base = settings.base_branch
+
+    # F5: base branch must exist
+    if not git_ok("show-ref", "--verify", "--quiet", f"refs/heads/{base}", cwd=root):
+        raise TaskError(f"base branch '{base}' not found; set backlog.baseBranch")
+
+    clean_id = task_id.lstrip("#")
+    branch = f"{BRANCH_PREFIX}{clean_id}"
+
+    # Where to write (Decision 30):
+    if branch_exists(branch, cwd=root):
+        wt_path = None
+        for t in worktree_list(root):
+            if t["branch"] == branch:
+                wt_path = Path(t["path"]).resolve()
+                break
+        if not wt_path or not wt_path.is_dir():
+            raise TaskError(f"run adopt '{task_id}' first")
+        target_tree = wt_path
+    else:
+        primary_path = primary_tree(root)
+        primary_branch = git("branch", "--show-current", cwd=primary_path, check=False).strip()
+        if primary_branch != base:
+            raise TaskError(f"Primary tree {primary_path} is on branch '{primary_branch}', expected base branch '{base}'.")
+        target_tree = primary_path
+
+    target_settings = load_settings(target_tree)
+    target_layout = get_layout(target_settings)
+    item = target_layout.find(task_id)
+    if not item:
+        raise TaskError(f"Task [{task_id}] not found in backlog at {target_tree}.")
+
+    if item.status in ("Closed", "Rejected", "Cancelled"):
+        raise TaskError(f"[{item.id}] is {item.status}; only open or in-progress items can be amended")
+
+    if priority and item.priority == priority:
+        raise TaskError(f"[{item.id}] is already {priority}")
+
+    commit_msg = f"chore(backlog): amend [{item.id}]"[:72]
+    pre_paths = target_layout.paths_for(item.id)
+
+    def do_amend():
+        written_paths = []
+        all_moves = []
+        if priority:
+            old_prio = item.priority
+            w_paths, moves = target_layout.set_priority(item.id, priority)
+            written_paths.extend(w_paths)
+            all_moves.extend(moves)
+            note_content = f"priority {old_prio} → {priority}: {note}"
+        else:
+            note_content = note
+
+        w_paths, moves = target_layout.append_note(item.id, note_content)
+        written_paths.extend(w_paths)
+        all_moves.extend(moves)
+        return written_paths, all_moves
+
+    safe_commit(target_tree, commit_msg, pre_paths, do_amend)
+    print(f"Amended [{item.id}]")
+    return 0
+
