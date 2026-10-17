@@ -221,24 +221,79 @@ def collect_branch_ids(root: Path, target_root: Path, settings: Any) -> list[str
             if proc_hdr.returncode != 0:
                 continue
 
-            proc = subprocess.run(
-                ["git", "ls-tree", "-r", "--name-only", ref, "--", f"{rel_dir}/open", f"{rel_dir}/closed"],
+            proc_ls = subprocess.run(
+                ["git", "ls-tree", "-r", ref, "--", f"{rel_dir}/open", f"{rel_dir}/closed"],
                 cwd=str(root),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
             )
-            if proc.returncode == 0:
-                for line in proc.stdout.splitlines():
-                    fname = Path(line.strip()).name
-                    m = re.match(r"^(\d+|[A-Za-z]+-\d+)-", fname)
-                    if m:
-                        val = m.group(1)
-                        if val.isdigit():
-                            seen_ids.add(f"#{val}")
-                        else:
-                            seen_ids.add(val)
+            if proc_ls.returncode != 0:
+                continue
+
+            from backlog_cli.layouts import parse_frontmatter
+
+            main_files: list[tuple[str, str]] = []
+            folder_blobs: dict[str, list[tuple[str, str]]] = {}
+
+            for line in proc_ls.stdout.split("\n"):
+                line = line.strip()
+                if not line or "\t" not in line:
+                    continue
+                meta, path_str = line.split("\t", 1)
+                parts = meta.split()
+                if len(parts) < 3 or parts[1] != "blob":
+                    continue
+                oid = parts[2]
+                p = Path(path_str)
+                if p.suffix != ".md" or p.name in ("00_BACKLOG.md", ".gitkeep"):
+                    continue
+                if p.parent.name in ("open", "closed"):
+                    main_files.append((oid, path_str))
+                elif p.parent.parent.name in ("open", "closed"):
+                    folder_blobs.setdefault(str(p.parent), []).append((oid, path_str))
+
+            for folder_path, blobs in folder_blobs.items():
+                folder_name = Path(folder_path).name
+                matched = [b for b in blobs if Path(b[1]).name == f"{folder_name}.md"]
+                if matched:
+                    main_files.append(matched[0])
+                elif blobs:
+                    main_files.append(blobs[0])
+
+            if main_files:
+                cat_input = b"".join(f"{oid}\n".encode("ascii") for oid, _ in main_files)
+                cat_proc = subprocess.run(
+                    ["git", "cat-file", "--batch"],
+                    cwd=str(root),
+                    input=cat_input,
+                    capture_output=True,
+                )
+                if cat_proc.returncode == 0:
+                    pos = 0
+                    out = cat_proc.stdout
+                    for oid, path_str in main_files:
+                        nl = out.find(b"\n", pos)
+                        if nl == -1:
+                            break
+                        hdr = out[pos:nl].decode("ascii", errors="replace")
+                        pos = nl + 1
+                        hdr_parts = hdr.split()
+                        if len(hdr_parts) >= 3 and hdr_parts[1] == "blob":
+                            size = int(hdr_parts[2])
+                            content = out[pos : pos + size].decode("utf-8", errors="replace")
+                            pos = pos + size + 1
+                            fields, _, _ = parse_frontmatter(content)
+                            tid = str(fields.get("id", "")).strip()
+                            if tid:
+                                seen_ids.add(tid)
+                            else:
+                                fname = Path(path_str).stem
+                                m = re.match(r"^(\d+|[A-Za-z]+-\d+)(?:-|\.md$|/|$)", fname)
+                                if m:
+                                    val = f"#{m.group(1)}" if m.group(1).isdigit() else m.group(1)
+                                    seen_ids.add(val)
 
     return list(seen_ids)
 

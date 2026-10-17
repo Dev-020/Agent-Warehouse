@@ -20,13 +20,106 @@ PRIORITY_RANK = {"P1": 1, "P2": 2, "P3": 3}
 
 
 def make_slug(title: str) -> str:
-    """Generate a slug from title: lowercase, non-alphanumerics to -, cut to at most 50 chars at -."""
+    """Generate a slug from title: lowercase, non-alphanumerics to -, cut to at most 50 chars at - (F12)."""
     s = title.lower()
     s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
     if len(s) > 50:
         s = s[:50]
         if "-" in s:
             s = s.rsplit("-", 1)[0]
+    if not s:
+        s = "item"
+    return s
+
+
+def yaml_escape_string(val: str) -> str:
+    """Escape backslash and double quote for YAML double-quoted string (F6)."""
+    return val.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def parse_labels_list(val: Any) -> list[str]:
+    """Parse labels from string or list into a list of clean label strings (F10)."""
+    if not val:
+        return []
+    if isinstance(val, list):
+        res: list[str] = []
+        for x in val:
+            res.extend(parse_labels_list(x))
+        return res
+    if isinstance(val, str):
+        parts = [p.strip().strip("`").strip("'\"") for p in val.split(",") if p.strip()]
+        return [p for p in parts if p]
+    return [str(val).strip()]
+
+
+def render_labels_markdown(labels: Any) -> str:
+    """Render labels for markdown entry line per convention §4.5 (F10)."""
+    lbls = parse_labels_list(labels)
+    if not lbls:
+        return ""
+    return ", ".join(f"`{l}`" for l in lbls)
+
+
+def format_yaml_value(key: str, val: Any) -> str:
+    """Format a value for YAML frontmatter per ruling F6."""
+    if key in ("title", "id"):
+        return f'"{yaml_escape_string(str(val))}"'
+    if key == "labels" or isinstance(val, list):
+        items = parse_labels_list(val) if key == "labels" else [str(x) for x in val]
+        quoted_items = [f'"{yaml_escape_string(x)}"' for x in items]
+        return f"[{', '.join(quoted_items)}]"
+
+    sval = str(val)
+    if (
+        ": " in sval
+        or " #" in sval
+        or (sval and sval[0] in "[]{}!&*->%@#?,`|'\"")
+        or sval != sval.strip()
+        or sval.lower() in ("true", "false", "yes", "no", "on", "off", "null", "~", "")
+    ):
+        return f'"{yaml_escape_string(sval)}"'
+
+    try:
+        float(sval)
+        return f'"{yaml_escape_string(sval)}"'
+    except ValueError:
+        pass
+
+    return sval
+
+
+def unescape_yaml_string(s: str) -> str:
+    """Unescape a quoted YAML string per ruling F6."""
+    s = s.strip()
+    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+        quote_char = s[0]
+        inner = s[1:-1]
+        if quote_char == "'":
+            return inner.replace("''", "'")
+        res = []
+        i = 0
+        while i < len(inner):
+            if inner[i] == "\\" and i + 1 < len(inner):
+                nxt = inner[i + 1]
+                if nxt == '"':
+                    res.append('"')
+                    i += 2
+                elif nxt == "\\":
+                    res.append("\\")
+                    i += 2
+                elif nxt == "n":
+                    res.append("\n")
+                    i += 2
+                elif nxt == "t":
+                    res.append("\t")
+                    i += 2
+                else:
+                    res.append(inner[i : i + 2])
+                    i += 2
+            else:
+                res.append(inner[i])
+                i += 1
+        return "".join(res)
     return s
 
 
@@ -183,9 +276,9 @@ def item_from_entry_lines(
                     if m_pr:
                         priority = m_pr.group(1).strip()
                 if "**Labels**:" in p:
-                    m_lb = re.search(r"\*\*Labels\*\*:\s*`?([^`*]+)`?", p)
+                    m_lb = re.search(r"\*\*Labels\*\*:\s*(.*)$", p)
                     if m_lb:
-                        fields["labels"] = m_lb.group(1).strip()
+                        fields["labels"] = parse_labels_list(m_lb.group(1).strip())
                 if "**Created**:" in p:
                     m_cr = re.search(r"\*\*Created\*\*:\s*([0-9-]+)", p)
                     if m_cr:
@@ -217,7 +310,8 @@ def item_from_entry_lines(
 def render_entry_lines(item: Item, style: str = "full", h_prefix: str = "###") -> list[str]:
     """Render entry lines adhering to decision 14."""
     today = item.fields.get("created") or datetime.date.today().isoformat()
-    labels_part = f" | **Labels**: `{item.fields['labels']}`" if item.fields.get("labels") else ""
+    lbl_rendered = render_labels_markdown(item.fields.get("labels"))
+    labels_part = f" | **Labels**: {lbl_rendered}" if lbl_rendered else ""
     meta_status = f"- **Status**: `{item.status}` | **Priority**: `{item.priority}`{labels_part}"
     meta_created = f"- **Created**: {today}"
 
@@ -283,12 +377,10 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], str, str]:
             k = k.strip()
             v = v.strip()
             if v.startswith("[") and v.endswith("]"):
-                items = [x.strip().strip("'\"") for x in v[1:-1].split(",") if x.strip()]
+                items = [unescape_yaml_string(x.strip()) for x in v[1:-1].split(",") if x.strip()]
                 fields[k] = items
-            elif (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
-                fields[k] = v[1:-1]
             else:
-                fields[k] = v
+                fields[k] = unescape_yaml_string(v)
 
     body = "".join(lines[end_idx + 1 :])
     raw_fm = "".join(lines[: end_idx + 1])
@@ -321,22 +413,14 @@ def update_frontmatter(text: str, updates: dict[str, Any]) -> str:
                 matched = k
         if matched:
             val = remaining.pop(matched)
-            if matched == "id":
-                new_fm_lines.append(f'id: "{val}"{le}')
-            elif isinstance(val, list):
-                new_fm_lines.append(f'{matched}: [{", ".join(str(x) for x in val)}]{le}')
-            else:
-                new_fm_lines.append(f"{matched}: {val}{le}")
+            formatted = format_yaml_value(matched, val)
+            new_fm_lines.append(f"{matched}: {formatted}{le}")
         else:
             new_fm_lines.append(line)
 
     for k, val in remaining.items():
-        if k == "id":
-            new_fm_lines.append(f'id: "{val}"{le}')
-        elif isinstance(val, list):
-            new_fm_lines.append(f'{k}: [{", ".join(str(x) for x in val)}]{le}')
-        else:
-            new_fm_lines.append(f"{k}: {val}{le}")
+        formatted = format_yaml_value(k, val)
+        new_fm_lines.append(f"{k}: {formatted}{le}")
 
     return lines[0] + "".join(new_fm_lines) + "".join(lines[end_idx:])
 
@@ -894,7 +978,12 @@ class ItemFoldersLayout(BaseLayout):
                 if file_to_read:
                     text, _, _, _ = read_text_preserving(file_to_read)
                     fields, body, _ = parse_frontmatter(text)
-                    tid = str(fields.get("id", ""))
+                    tid = str(fields.get("id", "")).strip()
+                    if not tid:
+                        fname = file_to_read.stem
+                        m = re.match(r"^(\d+|[A-Za-z]+-\d+)(?:-|\.md$|/|$)", fname)
+                        if m:
+                            tid = f"#{m.group(1)}" if m.group(1).isdigit() else m.group(1)
                     title = str(fields.get("title", ""))
                     status = str(fields.get("status", "Open"))
                     priority = str(fields.get("priority", "P2"))
@@ -920,7 +1009,12 @@ class ItemFoldersLayout(BaseLayout):
             if p:
                 text, _, _, _ = read_text_preserving(p)
                 fields, body, _ = parse_frontmatter(text)
-                tid = str(fields.get("id", ""))
+                tid = str(fields.get("id", "")).strip()
+                if not tid:
+                    fname = p.stem
+                    m = re.match(r"^(\d+|[A-Za-z]+-\d+)(?:-|\.md$|/|$)", fname)
+                    if m:
+                        tid = f"#{m.group(1)}" if m.group(1).isdigit() else m.group(1)
                 if id_matches(tid, task_id):
                     return Item(
                         id=tid,
@@ -943,24 +1037,21 @@ class ItemFoldersLayout(BaseLayout):
         self.open_dir.mkdir(parents=True, exist_ok=True)
         clean_id = item.id.lstrip("#").strip("[]")
         slug = make_slug(item.title)
-        filename = f"{clean_id}-{slug}.md" if slug else f"{clean_id}.md"
+        filename = f"{clean_id}-{slug}.md"
         target_path = self.open_dir / filename
 
         today = item.fields.get("created") or datetime.date.today().isoformat()
         fm_lines = [
             "---",
-            f'id: "{item.id}"',
-            f"title: {item.title}",
-            f"status: {item.status}",
-            f"priority: {item.priority}",
+            f"id: {format_yaml_value('id', item.id)}",
+            f"title: {format_yaml_value('title', item.title)}",
+            f"status: {format_yaml_value('status', item.status)}",
+            f"priority: {format_yaml_value('priority', item.priority)}",
         ]
         if item.fields.get("labels"):
-            lbls = item.fields["labels"]
-            if isinstance(lbls, list):
-                fm_lines.append(f"labels: [{', '.join(lbls)}]")
-            else:
-                fm_lines.append(f"labels: [{lbls}]")
-        fm_lines.append(f"created: {today}")
+            lbls = format_yaml_value("labels", item.fields["labels"])
+            fm_lines.append(f"labels: {lbls}")
+        fm_lines.append(f"created: {format_yaml_value('created', today)}")
         fm_lines.append("---")
         fm_lines.append("")
 

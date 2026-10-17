@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 from backlog_cli import TaskError
 from backlog_cli.ids import allocate_id
-from backlog_cli.layouts import ItemFoldersLayout, SingleFileLayout, SplitFilesLayout
+from backlog_cli.layouts import (
+    ItemFoldersLayout,
+    SingleFileLayout,
+    SplitFilesLayout,
+    item_from_entry_lines,
+    parse_frontmatter,
+    render_entry_lines,
+)
 from backlog_cli.model import Item
 
 
@@ -717,4 +724,29 @@ def test_f11_rejected_before_unrecognized_heading(tmp_path: Path):
     layout.set_status("#001", "Rejected")
     after = p.read_text(encoding="utf-8")
     assert after.index("### [#001]") < after.index("## 🔎 Findings Register")
+
+
+def test_f6_frontmatter_yaml_quoting(tmp_path: Path):
+    """F6: Folder frontmatter writes valid YAML for titles with colons, hashes, brackets, and quotes."""
+    bdir = tmp_path / "BACKLOG"
+    layout = ItemFoldersLayout(bdir)
+    titles = ["docs: fix the build", "Crash on start #12", "[WIP] tidy", "'quoted' start"]
+    for idx, title in enumerate(titles, start=1):
+        item = Item(id=f"#{idx:03d}", title=title, status="Open", priority="P2")
+        paths, _ = layout.add(item)
+        text = paths[0].read_text(encoding="utf-8")
+        fields, body, _ = parse_frontmatter(text)
+        assert fields.get("title") == title
+
+
+def test_f10_labels_format():
+    """F10: Labels are rendered as **Labels**: `Bug`, `UI` and parsed back returning all labels."""
+    item = Item(id="#001", title="Alpha", status="Open", priority="P2", fields={"labels": "Bug, UI"})
+    lines = render_entry_lines(item)
+    status_line = next(l for l in lines if l.startswith("- **Status**:"))
+    assert "**Labels**: `Bug`, `UI`" in status_line
+
+    parsed = item_from_entry_lines(lines)
+    assert parsed.fields.get("labels") == ["Bug", "UI"]
+
 

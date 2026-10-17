@@ -41,6 +41,10 @@
 - F7: layout file writes preserve the exact file tail (no final newline, one newline, or trailing blank lines).
 - F8: layout file reads split lines strictly on `\n` without `str.splitlines()` to avoid mutating unicode line breaks (U+2028, U+0085, form feed).
 - F11: section boundaries terminate at the next `## ` heading regardless of name, preventing icebox entries from landing after trailing sections like Findings Register.
+- F6: folder frontmatter writes `title` in double quotes with backslash and `"` escaped, quotes strings containing YAML indicator characters, and unescapes on read.
+- F10: labels on markdown entry status lines format per convention §4.5 as ``**Labels**: `Bug`, `UI` ``, and reader returns every label.
+- F12: items with slugless titles use slug `item` (`<ID>-item.md`), and branch scans recognize `<ID>-`, `<ID>.md`, and `<ID>/` formats so IDs are not re-allocated.
+- F13: folder branch scans read frontmatter `id` via `git cat-file --batch`, ensuring imported IDs (`ISS-20260917-slug`) classify as `other` and do not break sequential allocation.
 
 ### Removed
 - Fallback to `BACKLOG/Open.md` when `BACKLOG.md` is missing (a project sets `backlog_layout`).

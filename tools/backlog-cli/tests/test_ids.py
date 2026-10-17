@@ -68,3 +68,41 @@ def test_branch_without_backlog_file_skipped(tmp_path: Path, run_cli):
     res = run_cli(repo, "open", "Task when unrelated claim branch has no backlog")
     assert res.exit_code == 0
     assert "Created backlog item [#001]" in res.output
+
+
+def test_f12_folder_id_slugless_name(tmp_path: Path, run_cli):
+    """F12: item with slugless title gets slug 'item', and branch scan finds it so ID is not reused."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_f12", layout="folders")
+    run_cli(repo, "open", "Alpha task")
+    run_cli(repo, "claim", "#001")
+    wt_dir = (tmp_path / "worktrees" / "001").resolve()
+
+    # Open task with title containing only non-ASCII characters inside claim worktree
+    p_wt = run_cli(wt_dir, "open", "日本語")
+    assert p_wt.exit_code == 0
+    assert "Created backlog item [#002]" in p_wt.output
+
+    # From primary tree, open another task -> must allocate #003, not #002
+    p_main = run_cli(repo, "open", "Gamma task")
+    assert p_main.exit_code == 0
+    assert "Created backlog item [#003]" in p_main.output
+
+
+def test_f13_folder_imported_id_breaks_allocation(tmp_path: Path, run_cli):
+    """F13: imported ID (ISS-20260917-slug) is treated as 'other' and does not break sequential allocation."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_f13", layout="folders")
+    run_cli(repo, "open", "Alpha task")
+
+    # Write imported file and commit it to base branch
+    f = repo / "BACKLOG" / "open" / "ISS-20260917-slug-imported-bug.md"
+    f.write_text(
+        '---\nid: "ISS-20260917-slug"\ntitle: "Imported bug"\nstatus: Open\npriority: P2\ncreated: 2026-09-17\n---\n\n# [ISS-20260917-slug] Imported bug\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-qm", "import"], cwd=str(repo), check=True)
+
+    # Next open without --prefix should allocate #002 cleanly without error
+    res = run_cli(repo, "open", "Beta task")
+    assert res.exit_code == 0
+    assert "Created backlog item [#002]" in res.output
