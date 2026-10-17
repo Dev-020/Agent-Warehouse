@@ -287,3 +287,159 @@ def test_claim_missing_or_closed_id_creates_no_branch(tmp_path: Path, run_cli):
         cwd=str(repo),
     )
     assert ref2.returncode != 0
+
+
+# ---------------------------------------------------------------------------
+# Step 1c Tests: Hooks, safety rollback, and abandon checks (Decisions 24, 25)
+# ---------------------------------------------------------------------------
+
+
+def _install_failing_hook(repo: Path) -> Path:
+    hooks_dir = repo / ".git_hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook = hooks_dir / "pre-commit"
+    hook.write_text("#!/bin/sh\necho 'hook rejection'\nexit 1\n", encoding="utf-8")
+    hook.chmod(hook.stat().st_mode | stat.S_IEXEC)
+    subprocess.run(["git", "config", "core.hooksPath", str(hooks_dir).replace("\\", "/")], cwd=str(repo), check=True)
+    return hooks_dir
+
+
+def _setup_unrelated_files(repo: Path):
+    mod_file = repo / "unrelated_modified.txt"
+    staged_file = repo / "unrelated_staged.txt"
+    mod_file.write_text("initial mod\n", encoding="utf-8")
+    staged_file.write_text("initial staged\n", encoding="utf-8")
+    subprocess.run(["git", "add", "unrelated_modified.txt", "unrelated_staged.txt"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "add unrelated files"], cwd=str(repo), check=True)
+
+    # Modify one, stage the other
+    mod_file.write_text("modified content\n", encoding="utf-8")
+    staged_file.write_text("staged content\n", encoding="utf-8")
+    subprocess.run(["git", "add", "unrelated_staged.txt"], cwd=str(repo), check=True)
+
+    return mod_file, staged_file
+
+
+def _assert_unrelated_files_unchanged(repo: Path, mod_file: Path, staged_file: Path):
+    assert mod_file.read_text(encoding="utf-8") == "modified content\n"
+    assert staged_file.read_text(encoding="utf-8") == "staged content\n"
+    diff_cached = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=str(repo), capture_output=True, text=True).stdout
+    diff_worktree = subprocess.run(["git", "diff", "--name-only"], cwd=str(repo), capture_output=True, text=True).stdout
+    assert "unrelated_staged.txt" in diff_cached
+    assert "unrelated_modified.txt" in diff_worktree
+    assert "unrelated_modified.txt" not in diff_cached
+
+
+def test_hook_failure_open_leaves_backlog_and_unrelated_untouched(tmp_path: Path, run_cli):
+    """Hooks (Decision 25): open failure restores backlog; unrelated modified/staged files unchanged."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_hook_open")
+    mod_file, staged_file = _setup_unrelated_files(repo)
+    backlog_before = (repo / "BACKLOG.md").read_bytes()
+
+    _install_failing_hook(repo)
+
+    res = run_cli(repo, "open", "Failing task", "--prefix", "FAIL", "--new-prefix")
+    assert res.exit_code != 0
+    assert "hook rejection" in res.output or "failed" in res.output
+
+    # Backlog restored
+    assert (repo / "BACKLOG.md").read_bytes() == backlog_before
+    # Unrelated files unchanged
+    _assert_unrelated_files_unchanged(repo, mod_file, staged_file)
+
+
+def test_hook_failure_claim_leaves_no_branch_or_worktree_and_unrelated_untouched(tmp_path: Path, run_cli):
+    """Hooks (Decision 25): claim commit failure removes worktree, deletes branch, leaves unrelated files."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_hook_claim")
+    run_cli(repo, "open", "Task to claim", "--prefix", "TASK", "--new-prefix")
+    mod_file, staged_file = _setup_unrelated_files(repo)
+
+    _install_failing_hook(repo)
+
+    res = run_cli(repo, "claim", "TASK-1")
+    assert res.exit_code != 0
+
+    # No branch and no worktree left
+    ref_check = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", "refs/heads/claim/TASK-1"],
+        cwd=str(repo),
+    )
+    assert ref_check.returncode != 0
+    assert not (tmp_path / "worktrees" / "TASK-1").exists()
+
+    # Unrelated files unchanged
+    _assert_unrelated_files_unchanged(repo, mod_file, staged_file)
+
+
+def test_hook_failure_close_restores_worktree_and_leaves_main_unmerged(tmp_path: Path, run_cli):
+    """Hooks (Decision 25): close commit failure restores worktree backlog, leaves main unmerged."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_hook_close")
+    run_cli(repo, "open", "Task to close", "--prefix", "TASK", "--new-prefix")
+    run_cli(repo, "claim", "TASK-1")
+
+    wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
+    (wt_dir / "deliverable.txt").write_text("feature work\n", encoding="utf-8")
+    subprocess.run(["git", "add", "deliverable.txt"], cwd=str(wt_dir), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "work in progress"], cwd=str(wt_dir), check=True)
+
+    wt_backlog_before = (wt_dir / "BACKLOG.md").read_bytes()
+    mod_file, staged_file = _setup_unrelated_files(repo)
+    main_head_before = subprocess.run(["git", "rev-parse", "main"], cwd=str(repo), capture_output=True, text=True).stdout.strip()
+
+    _install_failing_hook(repo)
+
+    res = run_cli(repo, "close", "TASK-1", "--outcome", "All done")
+    assert res.exit_code != 0
+
+    # Worktree backlog restored
+    assert (wt_dir / "BACKLOG.md").read_bytes() == wt_backlog_before
+
+    # main unmerged
+    main_head_after = subprocess.run(["git", "rev-parse", "main"], cwd=str(repo), capture_output=True, text=True).stdout.strip()
+    assert main_head_after == main_head_before
+    assert not (repo / "deliverable.txt").exists()
+
+    # Worktree and branch still exist
+    assert wt_dir.is_dir()
+    ref_check = subprocess.run(["git", "show-ref", "--verify", "--quiet", "refs/heads/claim/TASK-1"], cwd=str(repo))
+    assert ref_check.returncode == 0
+
+    # Unrelated files unchanged
+    _assert_unrelated_files_unchanged(repo, mod_file, staged_file)
+
+
+def test_abandon_refuses_own_commits_and_force_restores(tmp_path: Path, run_cli):
+    """Decision 24 (D2, S10): abandon refuses branch with own commits; --force prints restore command and deletes."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_abandon_check")
+    run_cli(repo, "open", "Task to abandon", "--prefix", "TASK", "--new-prefix")
+    run_cli(repo, "claim", "TASK-1")
+
+    wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
+    # Add a commit of its own on the claim branch
+    (wt_dir / "work.txt").write_text("my progress\n", encoding="utf-8")
+    subprocess.run(["git", "add", "work.txt"], cwd=str(wt_dir), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "feat: my progress"], cwd=str(wt_dir), check=True)
+
+    tip_hash = subprocess.run(["git", "rev-parse", "--short", "claim/TASK-1"], cwd=str(repo), capture_output=True, text=True).stdout.strip()
+
+    # 1. Refuse without --force
+    res_refuse = run_cli(repo, "abandon", "TASK-1")
+    assert res_refuse.exit_code != 0
+    assert "has commits not on main" in res_refuse.output
+    assert "feat: my progress" in res_refuse.output
+
+    # Branch and worktree still exist
+    assert wt_dir.is_dir()
+    ref_check = subprocess.run(["git", "show-ref", "--verify", "--quiet", "refs/heads/claim/TASK-1"], cwd=str(repo))
+    assert ref_check.returncode == 0
+
+    # 2. Delete with --force
+    res_force = run_cli(repo, "abandon", "TASK-1", "--force")
+    assert res_force.exit_code == 0
+    assert f"Branch claim/TASK-1 tip was {tip_hash}" in res_force.output
+    assert f"git branch claim/TASK-1 {tip_hash}" in res_force.output
+    assert not wt_dir.exists()
+
+    ref_check_after = subprocess.run(["git", "show-ref", "--verify", "--quiet", "refs/heads/claim/TASK-1"], cwd=str(repo))
+    assert ref_check_after.returncode != 0
+

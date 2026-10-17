@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import os
 import re
 import shutil
 import subprocess
@@ -20,6 +21,7 @@ from backlog_cli.gitops import (
     branch_created_at,
     branch_exists,
     branch_last_activity,
+    check_no_git_dir_env,
     claim_branches,
     content_dirt,
     days_since,
@@ -29,7 +31,7 @@ from backlog_cli.gitops import (
     repo_root,
     worktree_list,
 )
-from backlog_cli.ids import allocate_id
+from backlog_cli.ids import allocate_id, collect_branch_ids
 from backlog_cli.layouts import PRIORITY_LEVELS, get_layout
 from backlog_cli.model import Item
 from backlog_cli.settings import load_settings
@@ -76,7 +78,7 @@ def safe_commit(
             git("commit", "-m", summary, "-m", trailer, "--", *rel_paths, cwd=root)
         except Exception as exc:
             if rel_paths:
-                git("reset", "--", *rel_paths, cwd=root, check=False)
+                git("reset", "-q", "--", *rel_paths, cwd=root, check=False)
             for p in created_paths:
                 if p.exists():
                     if p.is_dir():
@@ -92,13 +94,46 @@ def safe_commit(
             raise
 
 
+def detect_git_discovery(root: Path) -> str:
+    """Report how git was found adhering to Decision 26."""
+    if "GIT_DIR" in os.environ or "GIT_WORK_TREE" in os.environ:
+        return "GIT_DIR/GIT_WORK_TREE environment"
+    dot_git = root / ".git"
+    if dot_git.is_file():
+        target = ""
+        try:
+            text = dot_git.read_text(encoding="utf-8").strip()
+            if text.startswith("gitdir:"):
+                target = text[len("gitdir:") :].strip()
+        except OSError:
+            pass
+        if not target:
+            try:
+                target = git("rev-parse", "--git-dir", cwd=root, check=False)
+            except Exception:
+                pass
+        return f".git pointer file -> {target}" if target else ".git pointer file"
+    return ".git folder"
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Check or initialize repository configuration and hooks."""
     cwd = Path.cwd()
-    root = repo_root(cwd)
     problems: list[str] = []
     notes: list[str] = []
     warnings: list[str] = []
+
+    try:
+        root = repo_root(cwd)
+    except TaskError as exc:
+        problems.append(str(exc))
+        for p in problems:
+            print(f"  WARN  {p}")
+        return 1
+
+    # Report git detection (Decision 26)
+    git_source = detect_git_discovery(root)
+    notes.append(f"git: {git_source}")
 
     if args.init:
         # Decision 6: doctor --init no longer writes backlog.file
@@ -222,16 +257,31 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_open(args: argparse.Namespace) -> int:
     """Create a new backlog item and allocate next ID."""
+    if args.claim:
+        check_no_git_dir_env()
     cwd = Path.cwd()
     root = repo_root(cwd)
     trees = worktree_list(root)
     current_branch = git("branch", "--show-current", cwd=root, check=False).strip()
 
+    is_secondary_worktree = False
+    try:
+        gd = git("rev-parse", "--git-dir", cwd=root, check=False)
+        gcd = git("rev-parse", "--git-common-dir", cwd=root, check=False)
+        if Path(gd).resolve() != Path(gcd).resolve():
+            is_secondary_worktree = True
+    except Exception:
+        pass
+
     # Decision 16 (S9): Inside claim/* worktree, write and commit there; otherwise primary worktree
-    if current_branch.startswith(BRANCH_PREFIX):
+    if current_branch.startswith(BRANCH_PREFIX) or not is_secondary_worktree:
         target_root = root
     else:
-        target_root = Path(trees[0]["path"]).resolve() if trees else root
+        primary_candidate = Path(trees[0]["path"]).resolve() if trees else root
+        if (primary_candidate / "objects").is_dir() and not (primary_candidate / ".git").exists():
+            target_root = root
+        else:
+            target_root = primary_candidate
 
     settings = load_settings(target_root)
     layout = get_layout(settings)
@@ -254,8 +304,8 @@ def cmd_open(args: argparse.Namespace) -> int:
     if priority not in PRIORITY_LEVELS:
         raise TaskError(f"Invalid priority {priority!r}. Must be one of {PRIORITY_LEVELS}")
 
-    # Decision 13: Collect every ID from every file or item, open and closed
-    existing_ids = [it.id for it in layout.items()]
+    # Decision 23 (D1): Collect every ID from target tree, base branch tip, and claim/* branches
+    existing_ids = collect_branch_ids(root, target_root, settings)
     task_id = allocate_id(existing_ids, prefix=args.prefix, new_prefix=args.new_prefix)
 
     today = datetime.date.today().isoformat()
@@ -292,6 +342,7 @@ def cmd_open(args: argparse.Namespace) -> int:
 
 def cmd_claim(args: argparse.Namespace) -> int:
     """Atomically claim a task and provision its worktree."""
+    check_no_git_dir_env()
     cwd = Path.cwd()
     root = repo_root(cwd)
     custom_backlog = getattr(args, "backlog_path", None)
@@ -334,8 +385,24 @@ def cmd_claim(args: argparse.Namespace) -> int:
         summary = f"chore(backlog): claim [{task_id}]"[:72]
         safe_commit(target_dir, summary, wt_layout.paths_for(task_id), do_claim)
     except Exception:
-        git("worktree", "remove", "--force", str(target_dir), cwd=root, check=False)
-        git("branch", "-D", branch, cwd=root, check=False)
+        # Decision 25: remove worktree, delete branch only if it has no commits of its own
+        try:
+            git("worktree", "remove", "--force", str(target_dir), cwd=root)
+        except Exception:
+            force_rmtree(target_dir)
+            git("worktree", "prune", cwd=root, check=False)
+        base = settings.base_branch
+        commits_ahead = git(
+            "log",
+            "--no-merges",
+            "--format=%h",
+            f"{base}..{branch}",
+            cwd=root,
+            check=False,
+        ).splitlines()
+        has_own_commits = any(c.strip() for c in commits_ahead)
+        if not has_own_commits:
+            git("branch", "-D", branch, cwd=root, check=False)
         raise
 
     print(f"Claimed [{task_id}]:")
@@ -372,6 +439,7 @@ def cmd_adopt(args: argparse.Namespace) -> int:
 
 def cmd_close(args: argparse.Namespace) -> int:
     """Record completion, gate, merge to base branch, and tear down worktree."""
+    check_no_git_dir_env()
     cwd = Path.cwd()
     root = repo_root(cwd)
     settings = load_settings(root)
@@ -416,10 +484,15 @@ def cmd_close(args: argparse.Namespace) -> int:
         text=True,
     )
     if merged.returncode != 0:
-        raise TaskError(
-            f"{base} does not merge cleanly into {branch}.\n"
-            f"Resolve conflicts in {wt_path}, commit, and re-run close."
-        )
+        unmerged = git("ls-files", "-u", cwd=wt_path, check=False).strip()
+        if unmerged:
+            raise TaskError(
+                f"{base} does not merge cleanly into {branch}.\n"
+                f"Resolve conflicts in {wt_path}, commit, and re-run close."
+            )
+        git("merge", "--abort", cwd=wt_path, check=False)
+        err = (merged.stderr or merged.stdout).strip()
+        raise TaskError(f"Sync merge of {base} into {branch} failed:\n{err}")
 
     # Check for primary tree dirt
     main_dirt = content_dirt(root, worktree_root=settings.worktree_root)
@@ -432,7 +505,17 @@ def cmd_close(args: argparse.Namespace) -> int:
     # Atomic merge under lock
     lock_file = git_dir(root) / "merge.lock"
     with MergeLock(lock_file):
-        git("merge", "--no-ff", branch, "-m", f"Merge {branch}: {args.outcome.strip()}", cwd=root)
+        merge_res = subprocess.run(
+            ["git", "merge", "--no-ff", branch, "-m", f"Merge {branch}: {args.outcome.strip()}"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+        )
+        if merge_res.returncode != 0:
+            git("merge", "--abort", cwd=root, check=False)
+            err = (merge_res.stderr or merge_res.stdout).strip()
+            raise TaskError(f"Merge into {base} failed:\n{err}")
+
         try:
             force_rmtree(wt_path)
             git("worktree", "prune", cwd=root, check=False)
@@ -446,9 +529,11 @@ def cmd_close(args: argparse.Namespace) -> int:
 
 def cmd_abandon(args: argparse.Namespace) -> int:
     """Release a claim without merging."""
+    check_no_git_dir_env()
     cwd = Path.cwd()
     root = repo_root(cwd)
     settings = load_settings(root)
+    base = settings.base_branch
     task_id = args.id.strip().strip("'\"").strip("[]")
     clean_id = task_id.lstrip("#")
     branch = f"{BRANCH_PREFIX}{clean_id}"
@@ -462,14 +547,52 @@ def cmd_abandon(args: argparse.Namespace) -> int:
             wt_path = Path(t["path"])
             break
 
-    if wt_path and wt_path.is_dir():
-        if not args.force:
+    if not args.force:
+        if wt_path and wt_path.is_dir():
             dirt = content_dirt(wt_path, worktree_root=settings.worktree_root)
             if dirt:
                 raise TaskError(
                     f"Worktree {wt_path} contains uncommitted work:\n{dirt}\n"
                     "Pass --force to discard uncommitted changes."
                 )
+
+        log_out = git(
+            "log",
+            "--no-merges",
+            "--format=%h %s",
+            f"{base}..{branch}",
+            cwd=root,
+            check=False,
+        )
+        claim_subjects = {
+            f"chore(backlog): claim [{task_id}]",
+            f"chore(backlog): claim [#{clean_id}]",
+            f"chore(backlog): claim [{clean_id}]",
+        }
+        remaining_commits: list[str] = []
+        for line in log_out.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(" ", 1)
+            subject = parts[1] if len(parts) > 1 else ""
+            if subject in claim_subjects:
+                continue
+            remaining_commits.append(line)
+
+        if remaining_commits:
+            commits_list = "\n".join(f"  {c}" for c in remaining_commits)
+            raise TaskError(
+                f"Branch {branch} has commits not on {base}:\n{commits_list}\n"
+                "Pass --force to abandon and delete the branch."
+            )
+
+    tip_hash = git("rev-parse", "--short", branch, cwd=root).strip()
+
+    if args.force:
+        print(f"Branch {branch} tip was {tip_hash}. To restore it:\n  git branch {branch} {tip_hash}")
+
+    if wt_path and wt_path.is_dir():
         force_rmtree(wt_path)
         git("worktree", "prune", cwd=root, check=False)
 

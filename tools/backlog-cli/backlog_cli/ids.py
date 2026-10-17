@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 import re
+import subprocess
+from typing import Any
+
 
 
 def parse_task_id(header_line: str) -> str | None:
@@ -116,3 +120,124 @@ def find_next_id(prefix: str, text: str) -> str:
     """Legacy helper: allocate next ID matching prefix from text."""
     existing = extract_all_ids(text)
     return allocate_id(existing, prefix=prefix, new_prefix=True)
+
+
+def collect_branch_ids(root: Path, target_root: Path, settings: Any) -> list[str]:
+    """Collect task IDs from the target tree, base branch tip, and claim/* branches adhering to Decision 23 (D1)."""
+    from backlog_cli.gitops import claim_branches, git_ok
+    from backlog_cli.layouts import get_layout
+
+    seen_ids: set[str] = set()
+
+    # 1. Backlog in target tree
+    try:
+        target_layout = get_layout(settings)
+        for it in target_layout.items():
+            seen_ids.add(it.id)
+    except Exception:
+        pass
+
+    # 2. Base branch tip
+    candidate_refs: list[str] = []
+    base = settings.base_branch
+    if git_ok("rev-parse", "--verify", f"refs/heads/{base}", cwd=root) or git_ok(
+        "rev-parse", "--verify", base, cwd=root
+    ):
+        candidate_refs.append(base)
+
+    # 3. Every claim/* branch
+    for b in claim_branches(root):
+        if b not in candidate_refs:
+            candidate_refs.append(b)
+
+    layout_type = settings.layout
+    for ref in candidate_refs:
+        if layout_type == "single":
+            try:
+                rel = settings.backlog_file.resolve().relative_to(target_root.resolve()).as_posix()
+            except ValueError:
+                rel = settings.backlog_file.name
+
+            proc = subprocess.run(
+                ["git", "show", f"{ref}:{rel}"],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if proc.returncode != 0:
+                continue
+            for tid in extract_all_ids(proc.stdout):
+                seen_ids.add(tid)
+
+        elif layout_type == "split":
+            try:
+                rel_dir = settings.backlog_dir.resolve().relative_to(target_root.resolve()).as_posix()
+            except ValueError:
+                rel_dir = settings.backlog_dir.name
+
+            # A branch without the backlog file is skipped
+            proc_hdr = subprocess.run(
+                ["git", "show", f"{ref}:{rel_dir}/00_BACKLOG.md"],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if proc_hdr.returncode != 0:
+                continue
+
+            for fname in ("Open.md", "Closed.md"):
+                proc = subprocess.run(
+                    ["git", "show", f"{ref}:{rel_dir}/{fname}"],
+                    cwd=str(root),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if proc.returncode == 0:
+                    for tid in extract_all_ids(proc.stdout):
+                        seen_ids.add(tid)
+
+        elif layout_type == "folders":
+            try:
+                rel_dir = settings.backlog_dir.resolve().relative_to(target_root.resolve()).as_posix()
+            except ValueError:
+                rel_dir = settings.backlog_dir.name
+
+            # A branch without the backlog file is skipped
+            proc_hdr = subprocess.run(
+                ["git", "show", f"{ref}:{rel_dir}/00_BACKLOG.md"],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if proc_hdr.returncode != 0:
+                continue
+
+            proc = subprocess.run(
+                ["git", "ls-tree", "-r", "--name-only", ref, "--", f"{rel_dir}/open", f"{rel_dir}/closed"],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if proc.returncode == 0:
+                for line in proc.stdout.splitlines():
+                    fname = Path(line.strip()).name
+                    m = re.match(r"^(\d+|[A-Za-z]+-\d+)-", fname)
+                    if m:
+                        val = m.group(1)
+                        if val.isdigit():
+                            seen_ids.add(f"#{val}")
+                        else:
+                            seen_ids.add(val)
+
+    return list(seen_ids)
+

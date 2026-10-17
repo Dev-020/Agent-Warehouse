@@ -33,7 +33,8 @@ def git(*args: str, cwd: str | Path | None = None, check: bool = True) -> str:
         errors="replace",
     )
     if check and proc.returncode != 0:
-        err = (proc.stderr or proc.stdout).strip()
+        parts = [p.strip() for p in (proc.stdout, proc.stderr) if p and p.strip()]
+        err = "\n".join(parts) if parts else f"git {' '.join(args)} exited with code {proc.returncode}"
         raise TaskError(f"git {' '.join(args)} failed:\n{err}")
     return proc.stdout.strip()
 
@@ -49,10 +50,46 @@ def git_ok(*args: str, cwd: str | Path | None = None) -> bool:
     return proc.returncode == 0
 
 
+NO_GIT_MSG = "tool-only writing needs git; without it, use one named writer (skill/backlog-governance §4)"
+GIT_DIR_MSG = (
+    "claim, close and abandon can't run while GIT_DIR or GIT_WORK_TREE is set: "
+    "their worktree commands would act on the main tree. Unset them, or keep "
+    "the repository outside the folder with a .git pointer file (tool/git-dir-relocate)."
+)
+
+
+def check_no_git_dir_env() -> None:
+    """Refuse commands that manipulate worktrees while GIT_DIR or GIT_WORK_TREE is set."""
+    if "GIT_DIR" in os.environ or "GIT_WORK_TREE" in os.environ:
+        raise TaskError(GIT_DIR_MSG)
+
+
+def find_repo_root(cwd: str | Path | None = None) -> Path:
+    """Find git and repo root, raising exact TaskError if git is missing or folder is not in a repository."""
+    if shutil.which("git") is None:
+        raise TaskError(NO_GIT_MSG)
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=str(cwd) if cwd else None,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        out = proc.stdout.strip()
+        if proc.returncode == 0 and out:
+            return Path(out).resolve()
+        if ("GIT_DIR" in os.environ or "GIT_WORK_TREE" in os.environ) and git_ok("rev-parse", "--git-dir", cwd=cwd):
+            return Path(cwd or Path.cwd()).resolve()
+        raise TaskError(NO_GIT_MSG)
+    except OSError:
+        raise TaskError(NO_GIT_MSG)
+
+
 def repo_root(cwd: str | Path | None = None) -> Path:
     """Return top-level directory of current git working tree."""
-    out = git("rev-parse", "--show-toplevel", cwd=cwd, check=True)
-    return Path(out).resolve()
+    return find_repo_root(cwd)
 
 
 def git_dir(cwd: str | Path | None = None) -> Path:
