@@ -44,7 +44,8 @@ def classify_id(raw_id: str) -> tuple[str, str, int, int]:
 def extract_all_ids(text: str) -> list[str]:
     """Extract all task IDs from a text string."""
     ids = []
-    for line in text.splitlines():
+    for line in text.split("\n"):
+        line = line[:-1] if line.endswith("\r") else line
         tid = parse_task_id(line)
         if tid:
             ids.append(tid)

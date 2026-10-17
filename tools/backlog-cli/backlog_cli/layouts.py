@@ -30,20 +30,51 @@ def make_slug(title: str) -> str:
     return s
 
 
-def read_text_preserving(path: Path) -> tuple[str, str, bool]:
-    """Read file content and detect line ending (LF/CRLF) and UTF-8 BOM."""
+def split_lines_exact(text: str) -> list[str]:
+    """Split lines strictly on \n, stripping a preceding \r if present (F8)."""
+    return [line[:-1] if line.endswith("\r") else line for line in text.split("\n")]
+
+
+def split_lines_keepends(text: str) -> list[str]:
+    """Split text on \n keeping line endings, without splitting on other unicode breaks (F8)."""
+    parts = text.split("\n")
+    result = [p + "\n" for p in parts[:-1]]
+    if parts[-1]:
+        result.append(parts[-1])
+    return result
+
+
+def read_text_preserving(path: Path) -> tuple[str, str, bool, str]:
+    """Read file content and detect line ending (LF/CRLF), UTF-8 BOM, and exact tail (F7)."""
     raw = path.read_bytes()
     has_bom = raw.startswith(b"\xef\xbb\xbf")
     line_ending = "\r\n" if b"\r\n" in raw else "\n"
     text = raw.decode("utf-8-sig")
-    return text, line_ending, has_bom
+    tail_len = len(text) - len(text.rstrip("\r\n"))
+    tail = text[len(text) - tail_len :]
+    return text, line_ending, has_bom, tail
 
 
-def write_text_preserving(path: Path, text: str, line_ending: str, has_bom: bool) -> None:
-    """Write text preserving original line ending and BOM."""
-    # Normalize to desired line ending
-    lines = text.splitlines()
-    content = line_ending.join(lines) + line_ending
+def write_text_preserving(
+    path: Path,
+    lines_or_text: list[str] | str,
+    line_ending: str,
+    has_bom: bool,
+    tail: str | None = None,
+) -> None:
+    """Write text preserving original line ending, BOM, and exact tail (F7, F8)."""
+    if isinstance(lines_or_text, str):
+        tail_len = len(lines_or_text) - len(lines_or_text.rstrip("\r\n"))
+        body = lines_or_text[:-tail_len] if tail_len else lines_or_text
+        lines = split_lines_exact(body) if body else []
+        if tail is None:
+            tail = lines_or_text[len(lines_or_text) - tail_len :] if tail_len else line_ending
+    else:
+        lines = lines_or_text
+        if tail is None:
+            tail = line_ending
+
+    content = line_ending.join(lines) + tail
     encoded = content.encode("utf-8")
     if has_bom:
         encoded = b"\xef\xbb\xbf" + encoded
@@ -90,9 +121,9 @@ def parse_markdown_entries(lines: list[str]) -> list[tuple[int, int, str, str]]:
 
 
 def find_sections(lines: list[str]) -> dict[str, tuple[int, int]]:
-    """Map section names ('in progress', 'backlog', 'completed', 'icebox') to line spans."""
+    """Map section names ('in progress', 'backlog', 'completed', 'icebox') to line spans (F11)."""
     in_code_block = False
-    headings: list[tuple[int, str]] = []
+    all_headings: list[tuple[int, str | None]] = []
     for i, line in enumerate(lines):
         sline = line.strip()
         if sline.startswith("```"):
@@ -111,13 +142,13 @@ def find_sections(lines: list[str]) -> dict[str, tuple[int, int]]:
                 norm = "completed"
             elif "icebox" in clean:
                 norm = "icebox"
-            if norm:
-                headings.append((i, norm))
+            all_headings.append((i, norm))
 
     result: dict[str, tuple[int, int]] = {}
-    for idx, (line_idx, norm) in enumerate(headings):
-        next_idx = headings[idx + 1][0] if idx + 1 < len(headings) else len(lines)
-        result[norm] = (line_idx, next_idx)
+    for idx, (line_idx, norm) in enumerate(all_headings):
+        if norm:
+            next_idx = all_headings[idx + 1][0] if idx + 1 < len(all_headings) else len(lines)
+            result[norm] = (line_idx, next_idx)
     return result
 
 
@@ -231,7 +262,7 @@ def render_entry_lines(item: Item, style: str = "full", h_prefix: str = "###") -
 
 def parse_frontmatter(text: str) -> tuple[dict[str, Any], str, str]:
     """Parse frontmatter from markdown file. Returns (fields, body, raw_frontmatter)."""
-    lines = text.splitlines(keepends=True)
+    lines = split_lines_keepends(text)
     if not lines or lines[0].strip() != "---":
         return {}, text, ""
     end_idx = -1
@@ -266,7 +297,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], str, str]:
 
 def update_frontmatter(text: str, updates: dict[str, Any]) -> str:
     """Update frontmatter fields surgically. New fields go at the end before ---."""
-    lines = text.splitlines(keepends=True)
+    lines = split_lines_keepends(text)
     if not lines or lines[0].strip() != "---":
         return text
     end_idx = -1
@@ -511,7 +542,10 @@ def file_insert_entry_at_bottom(
         if lines[i].strip():
             last_idx = i
 
-    lines[last_idx + 1 : sec_end] = ["", *entry_lines, ""]
+    if sec_end < len(lines):
+        lines[last_idx + 1 : sec_end] = ["", *entry_lines, ""]
+    else:
+        lines[last_idx + 1 : sec_end] = ["", *entry_lines]
 
 
 def file_insert_entry_by_priority(
@@ -558,8 +592,8 @@ class SingleFileLayout(BaseLayout):
     def header(self) -> str:
         if not self.file.is_file():
             return ""
-        text, _, _ = read_text_preserving(self.file)
-        lines = text.splitlines()
+        text, _, _, _ = read_text_preserving(self.file)
+        lines = split_lines_exact(text.rstrip("\r\n")) if text else []
         hdr_lines: list[str] = []
         for line in lines:
             if line.startswith("## "):
@@ -570,21 +604,21 @@ class SingleFileLayout(BaseLayout):
     def paths_for(self, task_id: str | None = None) -> list[Path]:
         return [self.file]
 
-    def _load(self) -> tuple[list[str], str, bool, dict[str, tuple[int, int]]]:
+    def _load(self) -> tuple[list[str], str, bool, str, dict[str, tuple[int, int]]]:
         if not self.file.is_file():
             raise TaskError(f"Backlog file does not exist at {self.file}")
-        text, le, bom = read_text_preserving(self.file)
-        lines = text.splitlines()
+        text, le, bom, tail = read_text_preserving(self.file)
+        lines = split_lines_exact(text[: len(text) - len(tail)] if tail else text) if text else []
         sections = find_sections(lines)
         for req in ("in progress", "backlog", "completed", "icebox"):
             if req not in sections:
                 raise TaskError(f"Section '{req}' not found in {self.file}")
-        return lines, le, bom, sections
+        return lines, le, bom, tail, sections
 
     def items(self) -> list[Item]:
         if not self.file.is_file():
             return []
-        lines, le, bom, _ = self._load()
+        lines, le, bom, tail, _ = self._load()
         entries = parse_markdown_entries(lines)
         return [
             item_from_entry_lines(lines[start:end], self.file, (start, end), line_ending=le)
@@ -598,14 +632,14 @@ class SingleFileLayout(BaseLayout):
         return None
 
     def add(self, item: Item, style: str = "full") -> tuple[list[Path], list[tuple[Path, Path]]]:
-        lines, le, bom, sections = self._load()
+        lines, le, bom, tail, sections = self._load()
         entry_lines = render_entry_lines(item, style=style, h_prefix="###")
         file_insert_entry_by_priority(lines, sections, entry_lines)
-        write_text_preserving(self.file, "\n".join(lines), le, bom)
+        write_text_preserving(self.file, lines, le, bom, tail=tail)
         return [self.file], []
 
     def set_status(self, task_id: str, status: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
-        lines, le, bom, sections = self._load()
+        lines, le, bom, tail, sections = self._load()
         entry_lines, _ = file_extract_entry(lines, task_id)
         today = datetime.date.today().isoformat()
         entry_set_status(entry_lines, status, resolved_date=(today if status in ("Rejected", "Cancelled") else None))
@@ -619,22 +653,22 @@ class SingleFileLayout(BaseLayout):
         else:
             target_sec = "backlog"
         file_insert_entry_at_bottom(lines, sections, entry_lines, target_sec)
-        write_text_preserving(self.file, "\n".join(lines), le, bom)
+        write_text_preserving(self.file, lines, le, bom, tail=tail)
         return [self.file], []
 
     def close(self, task_id: str, status: str, outcome: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
-        lines, le, bom, sections = self._load()
+        lines, le, bom, tail, sections = self._load()
         entry_lines, _ = file_extract_entry(lines, task_id)
         today = datetime.date.today().isoformat()
         entry_set_status(entry_lines, status, resolved_date=today)
         entry_set_outcome(entry_lines, outcome, today)
         sections = find_sections(lines)
         file_insert_entry_at_bottom(lines, sections, entry_lines, "completed")
-        write_text_preserving(self.file, "\n".join(lines), le, bom)
+        write_text_preserving(self.file, lines, le, bom, tail=tail)
         return [self.file], []
 
     def append_note(self, task_id: str, text: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
-        lines, le, bom, _ = self._load()
+        lines, le, bom, tail, _ = self._load()
         res = file_find_entry(lines, task_id, path=self.file, line_ending=le)
         if not res:
             raise TaskError(f"Task [{task_id}] not found in {self.file}")
@@ -643,7 +677,7 @@ class SingleFileLayout(BaseLayout):
         today = datetime.date.today().isoformat()
         entry_append_note(entry_lines, text, today, h_prefix="####")
         lines[start:end] = entry_lines
-        write_text_preserving(self.file, "\n".join(lines), le, bom)
+        write_text_preserving(self.file, lines, le, bom, tail=tail)
         return [self.file], []
 
 
@@ -662,42 +696,42 @@ class SplitFilesLayout(BaseLayout):
     def header(self) -> str:
         if not self.header_file.is_file():
             return ""
-        text, _, _ = read_text_preserving(self.header_file)
+        text, _, _, _ = read_text_preserving(self.header_file)
         return text
 
     def paths_for(self, task_id: str | None = None) -> list[Path]:
         return [self.open_file, self.closed_file]
 
-    def _load_open(self) -> tuple[list[str], str, bool, dict[str, tuple[int, int]]]:
+    def _load_open(self) -> tuple[list[str], str, bool, str, dict[str, tuple[int, int]]]:
         if not self.open_file.is_file():
             raise TaskError(f"Backlog file does not exist at {self.open_file}")
-        text, le, bom = read_text_preserving(self.open_file)
-        lines = text.splitlines()
+        text, le, bom, tail = read_text_preserving(self.open_file)
+        lines = split_lines_exact(text[: len(text) - len(tail)] if tail else text) if text else []
         sections = find_sections(lines)
         for req in ("in progress", "backlog"):
             if req not in sections:
                 raise TaskError(f"Section '{req}' not found in {self.open_file}")
-        return lines, le, bom, sections
+        return lines, le, bom, tail, sections
 
-    def _load_closed(self) -> tuple[list[str], str, bool, dict[str, tuple[int, int]]]:
+    def _load_closed(self) -> tuple[list[str], str, bool, str, dict[str, tuple[int, int]]]:
         if not self.closed_file.is_file():
             raise TaskError(f"Backlog file does not exist at {self.closed_file}")
-        text, le, bom = read_text_preserving(self.closed_file)
-        lines = text.splitlines()
+        text, le, bom, tail = read_text_preserving(self.closed_file)
+        lines = split_lines_exact(text[: len(text) - len(tail)] if tail else text) if text else []
         sections = find_sections(lines)
         for req in ("completed", "icebox"):
             if req not in sections:
                 raise TaskError(f"Section '{req}' not found in {self.closed_file}")
-        return lines, le, bom, sections
+        return lines, le, bom, tail, sections
 
     def items(self) -> list[Item]:
         res: list[Item] = []
         if self.open_file.is_file():
-            lines, le, bom, _ = self._load_open()
+            lines, le, bom, tail, _ = self._load_open()
             for s, e, _, _ in parse_markdown_entries(lines):
                 res.append(item_from_entry_lines(lines[s:e], self.open_file, (s, e), line_ending=le))
         if self.closed_file.is_file():
-            lines, le, bom, _ = self._load_closed()
+            lines, le, bom, tail, _ = self._load_closed()
             for s, e, _, _ in parse_markdown_entries(lines):
                 res.append(item_from_entry_lines(lines[s:e], self.closed_file, (s, e), line_ending=le))
         return res
@@ -709,10 +743,10 @@ class SplitFilesLayout(BaseLayout):
         return None
 
     def add(self, item: Item, style: str = "full") -> tuple[list[Path], list[tuple[Path, Path]]]:
-        lines, le, bom, sections = self._load_open()
+        lines, le, bom, tail, sections = self._load_open()
         entry_lines = render_entry_lines(item, style=style, h_prefix="###")
         file_insert_entry_by_priority(lines, sections, entry_lines)
-        write_text_preserving(self.open_file, "\n".join(lines), le, bom)
+        write_text_preserving(self.open_file, lines, le, bom, tail=tail)
         return [self.open_file], []
 
     def set_status(self, task_id: str, status: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
@@ -724,34 +758,34 @@ class SplitFilesLayout(BaseLayout):
         is_closing = status in ("Closed", "Rejected", "Cancelled")
 
         if target.path == self.open_file and not is_closing:
-            lines, le, bom, sections = self._load_open()
+            lines, le, bom, tail, sections = self._load_open()
             entry_lines, _ = file_extract_entry(lines, task_id)
             entry_set_status(entry_lines, status)
             sections = find_sections(lines)
             target_sec = "in progress" if status == "In Progress" else "backlog"
             file_insert_entry_at_bottom(lines, sections, entry_lines, target_sec)
-            write_text_preserving(self.open_file, "\n".join(lines), le, bom)
+            write_text_preserving(self.open_file, lines, le, bom, tail=tail)
             return [self.open_file], []
 
         if target.path == self.open_file:
-            open_lines, o_le, o_bom, _ = self._load_open()
+            open_lines, o_le, o_bom, o_tail, _ = self._load_open()
             entry_lines, _ = file_extract_entry(open_lines, task_id)
             entry_set_status(entry_lines, status, resolved_date=(today if is_closing else None))
-            write_text_preserving(self.open_file, "\n".join(open_lines), o_le, o_bom)
+            write_text_preserving(self.open_file, open_lines, o_le, o_bom, tail=o_tail)
 
-            closed_lines, c_le, c_bom, sections = self._load_closed()
+            closed_lines, c_le, c_bom, c_tail, sections = self._load_closed()
             target_sec = "completed" if status == "Closed" else "icebox"
             file_insert_entry_at_bottom(closed_lines, sections, entry_lines, target_sec)
-            write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
+            write_text_preserving(self.closed_file, closed_lines, c_le, c_bom, tail=c_tail)
             return [self.open_file, self.closed_file], []
         else:
-            closed_lines, c_le, c_bom, sections = self._load_closed()
+            closed_lines, c_le, c_bom, c_tail, sections = self._load_closed()
             entry_lines, _ = file_extract_entry(closed_lines, task_id)
             entry_set_status(entry_lines, status, resolved_date=(today if is_closing else None))
             sections = find_sections(closed_lines)
             target_sec = "completed" if status == "Closed" else "icebox"
             file_insert_entry_at_bottom(closed_lines, sections, entry_lines, target_sec)
-            write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
+            write_text_preserving(self.closed_file, closed_lines, c_le, c_bom, tail=c_tail)
             return [self.closed_file], []
 
     def close(self, task_id: str, status: str, outcome: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
@@ -761,24 +795,24 @@ class SplitFilesLayout(BaseLayout):
 
         today = datetime.date.today().isoformat()
         if target.path == self.open_file:
-            open_lines, o_le, o_bom, _ = self._load_open()
+            open_lines, o_le, o_bom, o_tail, _ = self._load_open()
             entry_lines, _ = file_extract_entry(open_lines, task_id)
             entry_set_status(entry_lines, status, resolved_date=today)
             entry_set_outcome(entry_lines, outcome, today)
-            write_text_preserving(self.open_file, "\n".join(open_lines), o_le, o_bom)
+            write_text_preserving(self.open_file, open_lines, o_le, o_bom, tail=o_tail)
 
-            closed_lines, c_le, c_bom, sections = self._load_closed()
+            closed_lines, c_le, c_bom, c_tail, sections = self._load_closed()
             file_insert_entry_at_bottom(closed_lines, sections, entry_lines, "completed")
-            write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
+            write_text_preserving(self.closed_file, closed_lines, c_le, c_bom, tail=c_tail)
             return [self.open_file, self.closed_file], []
         else:
-            closed_lines, c_le, c_bom, sections = self._load_closed()
+            closed_lines, c_le, c_bom, c_tail, sections = self._load_closed()
             entry_lines, _ = file_extract_entry(closed_lines, task_id)
             entry_set_status(entry_lines, status, resolved_date=today)
             entry_set_outcome(entry_lines, outcome, today)
             sections = find_sections(closed_lines)
             file_insert_entry_at_bottom(closed_lines, sections, entry_lines, "completed")
-            write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
+            write_text_preserving(self.closed_file, closed_lines, c_le, c_bom, tail=c_tail)
             return [self.closed_file], []
 
     def append_note(self, task_id: str, text: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
@@ -787,8 +821,8 @@ class SplitFilesLayout(BaseLayout):
             raise TaskError(f"Task [{task_id}] not found in backlog")
 
         target_file = target.path
-        text_content, le, bom = read_text_preserving(target_file)
-        lines = text_content.splitlines()
+        text_content, le, bom, tail = read_text_preserving(target_file)
+        lines = split_lines_exact(text_content[: len(text_content) - len(tail)] if tail else text_content) if text_content else []
         res = file_find_entry(lines, task_id, path=target_file, line_ending=le)
         if not res:
             raise TaskError(f"Task [{task_id}] not found in {target_file}")
@@ -797,7 +831,7 @@ class SplitFilesLayout(BaseLayout):
         today = datetime.date.today().isoformat()
         entry_append_note(entry_lines, text, today, h_prefix="####")
         lines[start:end] = entry_lines
-        write_text_preserving(target_file, "\n".join(lines), le, bom)
+        write_text_preserving(target_file, lines, le, bom, tail=tail)
         return [target_file], []
 
 
@@ -816,7 +850,7 @@ class ItemFoldersLayout(BaseLayout):
     def header(self) -> str:
         if not self.header_file.is_file():
             return ""
-        text, _, _ = read_text_preserving(self.header_file)
+        text, _, _, _ = read_text_preserving(self.header_file)
         return text
 
     def paths_for(self, task_id: str | None = None) -> list[Path]:
@@ -858,7 +892,7 @@ class ItemFoldersLayout(BaseLayout):
                         file_to_read = main_file
 
                 if file_to_read:
-                    text, _, _ = read_text_preserving(file_to_read)
+                    text, _, _, _ = read_text_preserving(file_to_read)
                     fields, body, _ = parse_frontmatter(text)
                     tid = str(fields.get("id", ""))
                     title = str(fields.get("title", ""))
@@ -884,7 +918,7 @@ class ItemFoldersLayout(BaseLayout):
         for base in (self.open_dir, self.closed_dir):
             p = self._find_item_path(base, clean_id)
             if p:
-                text, _, _ = read_text_preserving(p)
+                text, _, _, _ = read_text_preserving(p)
                 fields, body, _ = parse_frontmatter(text)
                 tid = str(fields.get("id", ""))
                 if id_matches(tid, task_id):
@@ -973,14 +1007,14 @@ class ItemFoldersLayout(BaseLayout):
             raise TaskError(f"Task [{task_id}] not found in backlog")
 
         file_path = target.path
-        text, le, bom = read_text_preserving(file_path)
+        text, le, bom, tail = read_text_preserving(file_path)
         updates: dict[str, Any] = {"status": status}
         today = datetime.date.today().isoformat()
         if status in ("Rejected", "Cancelled"):
             updates["resolved"] = today
 
         new_text = update_frontmatter(text, updates)
-        write_text_preserving(file_path, new_text, le, bom)
+        write_text_preserving(file_path, new_text, le, bom, tail=tail)
 
         if status in ("Rejected", "Cancelled") and self.open_dir in file_path.parents:
             # Move to closed/
@@ -1004,7 +1038,7 @@ class ItemFoldersLayout(BaseLayout):
             raise TaskError(f"Task [{task_id}] not found in backlog")
 
         file_path = target.path
-        text, le, bom = read_text_preserving(file_path)
+        text, le, bom, tail = read_text_preserving(file_path)
         today = datetime.date.today().isoformat()
 
         # Update frontmatter: status and resolved
@@ -1012,7 +1046,7 @@ class ItemFoldersLayout(BaseLayout):
         text_with_fm = update_frontmatter(text, updates)
 
         # Update outcome in body
-        lines = text_with_fm.splitlines()
+        lines = split_lines_exact(text_with_fm[: len(text_with_fm) - len(tail)] if tail else text_with_fm) if text_with_fm else []
         outcome_idx = None
         for i, l in enumerate(lines):
             if l.strip() == "## Outcome":
@@ -1032,7 +1066,7 @@ class ItemFoldersLayout(BaseLayout):
             lines.append("")
             lines.append(f"*Outcome ({today}):* {outcome}")
 
-        write_text_preserving(file_path, "\n".join(lines), le, bom)
+        write_text_preserving(file_path, lines, le, bom, tail=tail)
 
         # Move to closed/
         self.closed_dir.mkdir(parents=True, exist_ok=True)
@@ -1053,11 +1087,11 @@ class ItemFoldersLayout(BaseLayout):
             raise TaskError(f"Task [{task_id}] not found in backlog")
 
         file_path = target.path
-        content, le, bom = read_text_preserving(file_path)
-        lines = content.splitlines()
+        content, le, bom, tail = read_text_preserving(file_path)
+        lines = split_lines_exact(content[: len(content) - len(tail)] if tail else content) if content else []
         today = datetime.date.today().isoformat()
         entry_append_note(lines, text, today, h_prefix="##")
-        write_text_preserving(file_path, "\n".join(lines), le, bom)
+        write_text_preserving(file_path, lines, le, bom, tail=tail)
         return [file_path], []
 
 

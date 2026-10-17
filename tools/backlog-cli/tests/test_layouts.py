@@ -672,3 +672,49 @@ def test_b3_close_single_blank_line_spacing(tmp_path: Path):
     # In Completed section, after Outcome\nDone. there must be exactly one blank line before ## 🧊 Icebox
     assert "#### Outcome\nDone.\n\n## 🧊 Icebox" in text
     assert "#### Outcome\nDone.\n\n\n## 🧊 Icebox" not in text
+
+
+def test_f7_final_newline_preserved(tmp_path: Path):
+    """F7: Keep file's exact tail: no final newline, one, or blank lines after it."""
+    for tail in ("", "\n", "\n\n"):
+        p = tmp_path / f"BACKLOG_{len(tail)}.md"
+        base_text = "# Project Backlog\n\n## 📋 In Progress\n\n## 📌 Backlog (Open Tasks)\n\n## ✅ Completed\n\n## 🧊 Icebox\n\nNote at end" + tail
+        p.write_bytes(base_text.encode("utf-8"))
+        layout = SingleFileLayout(p)
+        item = Item(id="#001", title="Task 1", status="Open", priority="P2")
+        layout.add(item)
+        after = p.read_bytes()
+        assert after.endswith(("Note at end" + tail).encode("utf-8"))
+
+
+def test_f8_unicode_line_breaks_untouched(tmp_path: Path):
+    """F8: Untouched entries with U+2028, U+0085 or form feed are not rewritten with standard newlines."""
+    entry = "### [#001] Pasted\n- **Status**: `Open` | **Priority**: `P1`\n- **Created**: 2026-10-01\n\nline one\u2028still line one\x0cpage\n"
+    text = (
+        "# Project Backlog\n\n## 📋 In Progress\n\n## 📌 Backlog (Open Tasks)\n\n"
+        + entry
+        + "\n## ✅ Completed\n\n## 🧊 Icebox\n"
+    )
+    p = tmp_path / "BACKLOG.md"
+    p.write_text(text, encoding="utf-8")
+    layout = SingleFileLayout(p)
+    item = Item(id="#002", title="Second", status="Open", priority="P3")
+    layout.add(item)
+    after = p.read_text(encoding="utf-8")
+    assert entry.rstrip("\n") in after
+
+
+def test_f11_rejected_before_unrecognized_heading(tmp_path: Path):
+    """F11: Every section ends at the next ## heading, so a rejected entry stays before ## 🔎 Findings Register."""
+    text = (
+        "# Project Backlog\n\n## 📋 In Progress\n\n## 📌 Backlog (Open Tasks)\n\n"
+        "### [#001] Alpha\n- **Status**: `Open` | **Priority**: `P2`\n- **Created**: 2026-10-01\n\n"
+        "## ✅ Completed\n\n## 🧊 Icebox\n\n## 🔎 Findings Register\n\n### Watch List\n- something to watch\n"
+    )
+    p = tmp_path / "BACKLOG.md"
+    p.write_text(text, encoding="utf-8")
+    layout = SingleFileLayout(p)
+    layout.set_status("#001", "Rejected")
+    after = p.read_text(encoding="utf-8")
+    assert after.index("### [#001]") < after.index("## 🔎 Findings Register")
+

@@ -38,6 +38,9 @@
 - F14: tool commits carry only the message summary without the `Co-Authored-By` trailer.
 - F15: `claim` completion hint quotes the task ID so shell comment characters (`#`) are preserved.
 - F3: layout methods return written paths and moves; `safe_commit` restores moved destinations back to sources before restoring bytes on commit failure without deleting moved paths.
+- F7: layout file writes preserve the exact file tail (no final newline, one newline, or trailing blank lines).
+- F8: layout file reads split lines strictly on `\n` without `str.splitlines()` to avoid mutating unicode line breaks (U+2028, U+0085, form feed).
+- F11: section boundaries terminate at the next `## ` heading regardless of name, preventing icebox entries from landing after trailing sections like Findings Register.
 
 ### Removed
 - Fallback to `BACKLOG/Open.md` when `BACKLOG.md` is missing (a project sets `backlog_layout`).
