@@ -104,11 +104,13 @@ See [[cli-reference]] in `docs/` for the complete reference manual with argument
 | `warehouse registry` | Regenerate `_registry/projects.md` |
 | `warehouse index` | Regenerate `00_INDEX.md` |
 | `warehouse install-hook [--force]` | Install git post-commit and post-merge hooks |
+| `warehouse request <summary>` / `issue <id> --summary …` | File a ticket in `_inbox/` (used by agents in other projects) |
+| `warehouse inbox <list\|show\|triage\|resolve\|reject>` | Work inbox tickets; resolve/reject only after the `BACKLOG.md` entry is closed |
 
 ## Status
 
 **Phases 1–4 Complete. Operational Phase: On-Demand Adoption.** 
-The tool `_tools/warehouse.py` is fully implemented and tested (146 tests passing). All 18 initial catalog items are drafted, reconciled, and released at `0.1.0`. Pilot projects (`doc-scanner`, `GRIP`, `COLLEGE`) are onboarded and verified. Centralized push rollout (former Phase 5) was superseded by decentralized on-demand adoption to eliminate instruction bloat and preserve project context sovereignty.
+The tool `_tools/warehouse.py` is fully implemented and tested (suite in `_tools/tests/`). All 18 initial catalog items are drafted, reconciled, and released at `0.1.0`. Pilot projects (`doc-scanner`, `GRIP`, `COLLEGE`) are onboarded and verified. Centralized push rollout (former Phase 5) was superseded by decentralized on-demand adoption to eliminate instruction bloat and preserve project context sovereignty.
 
 | Phase | What | Status |
 |---|---|---|
