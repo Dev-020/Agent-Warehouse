@@ -1,6 +1,6 @@
 ---
 id: protocol/research-discipline
-version: 0.1.0
+version: 0.1.1
 status: draft
 summary: "Research discipline and the provenance ladder: look it up, do not reason it out."
 applies-to: [vault, codebase]
@@ -130,6 +130,8 @@ Guessing or extrapolating by analogy is never permitted.
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.1] - 2026-10-17
 #### Changed
 - Wording: "handoff" is now "hand-over" (state passed between sessions), matching
   `protocol/phased-implementation`'s terms. No rule changed.
