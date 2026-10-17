@@ -1,6 +1,6 @@
 ---
 id: protocol/phased-implementation
-version: 0.3.1
+version: 0.4.0
 status: draft
 summary: Plan, review, then build in phases with fresh or continued subagents, checkpoint commits, probe-backed reviews, one full test run per phase, and a session-log hand-over between phases.
 applies-to: [codebase]
@@ -151,6 +151,8 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 ## Changelog
 
 ### [Unreleased]
+
+### [0.4.0] - 2026-10-17
 #### Added
 - Live checks between phases. Stage 1 step 4: the plan marks which phases get a live check after their
   merge and which are live gates the next phase waits on; not every phase needs one. Stage 2 step 10:
