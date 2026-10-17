@@ -1,6 +1,6 @@
 ---
 id: protocol/agent-protocol
-version: 0.1.0
+version: 0.1.1
 status: draft
 summary: "Core operating protocol for AI agents: capability matrix, source-of-truth hierarchy, loss-on-write precautions, working posture, and concurrency."
 applies-to: [vault, codebase]
@@ -126,6 +126,8 @@ Multiple agents, human collaborators, or background processes frequently operate
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.1] - 2026-10-17
 #### Changed
 - Wording: "handoff" is now "hand-over" (state passed between sessions), matching
   `protocol/phased-implementation`'s terms. No setting, rule or step changed; only the `session_folder`
