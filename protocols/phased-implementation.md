@@ -1,6 +1,6 @@
 ---
 id: protocol/phased-implementation
-version: 0.4.0
+version: 0.4.1
 status: draft
 summary: Plan, review, then build in phases with fresh or continued subagents, checkpoint commits, probe-backed reviews, one full test run per phase, and a session-log hand-over between phases.
 applies-to: [codebase]
@@ -151,6 +151,8 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 ## Changelog
 
 ### [Unreleased]
+
+### [0.4.1] - 2026-10-17
 #### Fixed
 - Requires `template/plan-document@0.2`. 0.4.0 still pinned it at `@0.1`, so a pull kept the old §6.2
   without the table of live checks and gates.
