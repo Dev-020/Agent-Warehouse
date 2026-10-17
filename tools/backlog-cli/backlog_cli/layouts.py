@@ -350,6 +350,203 @@ class BaseLayout(ABC):
 
 
 # ---------------------------------------------------------------------------
+# Shared Entry & File Helpers (Decision 22)
+# ---------------------------------------------------------------------------
+
+
+def entry_get_metadata_span(entry_lines: list[str]) -> tuple[int, int]:
+    """Return the [start, end) index span of the metadata block directly following the heading."""
+    end = 1
+    while end < len(entry_lines) and entry_lines[end].startswith("- **"):
+        end += 1
+    return 1, end
+
+
+def entry_set_status(entry_lines: list[str], new_status: str, resolved_date: str | None = None) -> None:
+    """Update status and optionally insert/update resolved date in the metadata block."""
+    meta_start, meta_end = entry_get_metadata_span(entry_lines)
+    for i in range(meta_start, meta_end):
+        if entry_lines[i].startswith("- **Status**:"):
+            entry_lines[i] = re.sub(r"`(Open|In Progress|Closed|Rejected|Cancelled)`", f"`{new_status}`", entry_lines[i])
+            break
+
+    if resolved_date:
+        has_resolved = False
+        for i in range(meta_start, meta_end):
+            if entry_lines[i].startswith("- **Resolved**:"):
+                has_resolved = True
+                entry_lines[i] = f"- **Resolved**: {resolved_date}"
+                break
+        if not has_resolved:
+            # Insert right after the last metadata line (Fixes B1: never past metadata block)
+            entry_lines.insert(meta_end, f"- **Resolved**: {resolved_date}")
+
+
+def entry_set_outcome(entry_lines: list[str], outcome: str, today: str) -> None:
+    """Update or append outcome in entry_lines."""
+    outcome_idx = None
+    for i, l in enumerate(entry_lines):
+        if l.strip() == "#### Outcome":
+            outcome_idx = i
+            break
+
+    if outcome_idx is not None:
+        # Full style: replace parenthesized placeholder, or append paragraph below
+        next_idx = outcome_idx + 1
+        while next_idx < len(entry_lines) and not entry_lines[next_idx].strip():
+            next_idx += 1
+        if next_idx < len(entry_lines) and re.match(r"^\s*\(.*\)\s*$", entry_lines[next_idx]):
+            entry_lines[next_idx] = outcome
+        else:
+            entry_lines.append("")
+            entry_lines.append(outcome)
+    else:
+        # Compact style: append *Outcome (<date>):* <text>
+        entry_lines.append("")
+        entry_lines.append(f"*Outcome ({today}):* {outcome}")
+
+
+def entry_append_note(entry_lines: list[str], text: str, today: str, h_prefix: str = "####") -> None:
+    """Append dated note to entry_lines right after last note line, ensuring single blank line before next heading."""
+    note_line = f"- {today}: {text}"
+    notes_heading = f"{h_prefix} Notes"
+    outcome_heading = f"{h_prefix} Outcome"
+
+    is_full = any(l.strip().startswith(f"{h_prefix} ") for l in entry_lines)
+    if is_full:
+        notes_idx = None
+        outcome_idx = None
+        for i, l in enumerate(entry_lines):
+            s = l.strip()
+            if s == notes_heading:
+                notes_idx = i
+            elif s == outcome_heading:
+                outcome_idx = i
+
+        if notes_idx is not None:
+            last_note_idx = None
+            for i in range(notes_idx + 1, len(entry_lines)):
+                s = entry_lines[i].strip()
+                if s.startswith(f"{h_prefix} "):
+                    break
+                if s.startswith("- "):
+                    last_note_idx = i
+
+            if last_note_idx is not None:
+                insert_idx = last_note_idx + 1
+            else:
+                insert_idx = notes_idx + 1
+
+            entry_lines.insert(insert_idx, note_line)
+
+            next_idx = insert_idx + 1
+            if next_idx < len(entry_lines) and entry_lines[next_idx].strip().startswith(f"{h_prefix} "):
+                entry_lines.insert(next_idx, "")
+        else:
+            insert_before = outcome_idx if outcome_idx is not None else len(entry_lines)
+            entry_lines[insert_before:insert_before] = [notes_heading, note_line, ""]
+    else:
+        wanted_idx = None
+        for i, l in enumerate(entry_lines):
+            if l.strip().startswith("*Wanted:*"):
+                wanted_idx = i
+                break
+        if wanted_idx is not None:
+            last_note_idx = None
+            for i in range(wanted_idx):
+                s = entry_lines[i].strip()
+                if s.startswith("- ") and not s.startswith("- **"):
+                    last_note_idx = i
+
+            if last_note_idx is not None:
+                entry_lines.insert(last_note_idx + 1, note_line)
+            else:
+                ins = wanted_idx - 1 if wanted_idx > 0 and not entry_lines[wanted_idx - 1].strip() else wanted_idx
+                entry_lines.insert(ins, note_line)
+                if ins + 1 < len(entry_lines) and entry_lines[ins + 1].strip():
+                    entry_lines.insert(ins + 1, "")
+        else:
+            entry_lines.append(note_line)
+
+
+def file_find_entry(
+    lines: list[str], task_id: str, path: Path | None = None, line_ending: str = "\n"
+) -> tuple[int, int, Item] | None:
+    """Find entry matching task_id in lines."""
+    for s, e, tid, _ in parse_markdown_entries(lines):
+        if id_matches(tid, task_id):
+            return s, e, item_from_entry_lines(lines[s:e], path=path, span=(s, e), line_ending=line_ending)
+    return None
+
+
+def file_extract_entry(lines: list[str], task_id: str) -> tuple[list[str], Item]:
+    """Extract entry matching task_id from lines, removing it and returning clean entry lines."""
+    for s, e, tid, _ in parse_markdown_entries(lines):
+        if id_matches(tid, task_id):
+            raw_entry = lines[s:e]
+            clean_entry = list(raw_entry)
+            while clean_entry and not clean_entry[-1].strip():
+                clean_entry.pop()
+            it = item_from_entry_lines(clean_entry)
+            del lines[s:e]
+            return clean_entry, it
+    raise TaskError(f"Task [{task_id}] not found in backlog")
+
+
+def file_insert_entry_at_bottom(
+    lines: list[str],
+    sections: dict[str, tuple[int, int]],
+    entry_lines: list[str],
+    section_name: str,
+) -> None:
+    """Insert entry at the bottom of a section, ensuring exact 1-blank-line separation (Fixes B3)."""
+    while entry_lines and not entry_lines[0].strip():
+        entry_lines.pop(0)
+    while entry_lines and not entry_lines[-1].strip():
+        entry_lines.pop()
+
+    sec_start, sec_end = sections[section_name]
+    last_idx = sec_start
+    for i in range(sec_start + 1, sec_end):
+        if lines[i].strip():
+            last_idx = i
+
+    lines[last_idx + 1 : sec_end] = ["", *entry_lines, ""]
+
+
+def file_insert_entry_by_priority(
+    lines: list[str],
+    sections: dict[str, tuple[int, int]],
+    entry_lines: list[str],
+) -> None:
+    """Insert entry into backlog section by priority (P1, P2, P3)."""
+    while entry_lines and not entry_lines[0].strip():
+        entry_lines.pop(0)
+    while entry_lines and not entry_lines[-1].strip():
+        entry_lines.pop()
+
+    b_start, b_end = sections["backlog"]
+    item = item_from_entry_lines(entry_lines)
+    new_rank = PRIORITY_RANK.get(item.priority, 2)
+    entries = parse_markdown_entries(lines)
+    backlog_entries = [
+        (s, e, item_from_entry_lines(lines[s:e])) for s, e, _, _ in entries if s >= b_start and e <= b_end
+    ]
+
+    same_prio = [e for e in backlog_entries if PRIORITY_RANK.get(e[2].priority, 2) == new_rank]
+    lower_prio = [e for e in backlog_entries if PRIORITY_RANK.get(e[2].priority, 2) > new_rank]
+
+    if same_prio:
+        target_idx = same_prio[-1][1]
+        lines[target_idx:target_idx] = [*entry_lines, ""]
+    elif lower_prio:
+        target_idx = lower_prio[0][0]
+        lines[target_idx:target_idx] = [*entry_lines, ""]
+    else:
+        file_insert_entry_at_bottom(lines, sections, entry_lines, "backlog")
+
+
+# ---------------------------------------------------------------------------
 # Single File Layout
 # ---------------------------------------------------------------------------
 
@@ -362,7 +559,6 @@ class SingleFileLayout(BaseLayout):
         if not self.file.is_file():
             return ""
         text, _, _ = read_text_preserving(self.file)
-        # Header is block between top of file and first ## section
         lines = text.splitlines()
         hdr_lines: list[str] = []
         for line in lines:
@@ -403,62 +599,16 @@ class SingleFileLayout(BaseLayout):
 
     def add(self, item: Item, style: str = "full") -> list[Path]:
         lines, le, bom, sections = self._load()
-        b_start, b_end = sections["backlog"]
-
-        # Priority placement (Decision 15)
-        new_rank = PRIORITY_RANK.get(item.priority, 2)
-        entries = parse_markdown_entries(lines)
-        backlog_entries = [
-            (s, e, item_from_entry_lines(lines[s:e])) for s, e, _, _ in entries if s >= b_start and e <= b_end
-        ]
-
-        same_prio = [e for e in backlog_entries if PRIORITY_RANK.get(e[2].priority, 2) == new_rank]
-        lower_prio = [e for e in backlog_entries if PRIORITY_RANK.get(e[2].priority, 2) > new_rank]
-
-        if same_prio:
-            ins = same_prio[-1][1]
-        elif lower_prio:
-            ins = lower_prio[0][0]
-        else:
-            ins = b_end
-            while ins > b_start + 1 and not lines[ins - 1].strip():
-                ins -= 1
-
         entry_lines = render_entry_lines(item, style=style, h_prefix="###")
-        # Ensure clean spacing around entry
-        to_insert = [""] + entry_lines if ins > 0 and lines[ins - 1].strip() else entry_lines
-        lines[ins:ins] = to_insert
-
+        file_insert_entry_by_priority(lines, sections, entry_lines)
         write_text_preserving(self.file, "\n".join(lines), le, bom)
         return [self.file]
 
     def set_status(self, task_id: str, status: str) -> list[Path]:
         lines, le, bom, sections = self._load()
-        target = self.find(task_id)
-        if not target or not target.span:
-            raise TaskError(f"Task [{task_id}] not found in {self.file}")
-
-        start, end = target.span
-        entry_lines = list(lines[start:end])
-        del lines[start:end]
-
+        entry_lines, _ = file_extract_entry(lines, task_id)
         today = datetime.date.today().isoformat()
-        # Update status line
-        for i, l in enumerate(entry_lines):
-            if l.startswith("- **Status**:"):
-                entry_lines[i] = re.sub(r"`(Open|In Progress|Closed|Rejected|Cancelled)`", f"`{status}`", l)
-                break
-
-        if status in ("Rejected", "Cancelled"):
-            # Add Resolved metadata line if not present
-            has_resolved = any(l.startswith("- **Resolved**:") for l in entry_lines)
-            if not has_resolved:
-                for idx in range(len(entry_lines) - 1, -1, -1):
-                    if entry_lines[idx].startswith("- **"):
-                        entry_lines.insert(idx + 1, f"- **Resolved**: {today}")
-                        break
-
-        # Re-parse sections after deletion
+        entry_set_status(entry_lines, status, resolved_date=(today if status in ("Rejected", "Cancelled") else None))
         sections = find_sections(lines)
         if status == "In Progress":
             target_sec = "in progress"
@@ -468,128 +618,30 @@ class SingleFileLayout(BaseLayout):
             target_sec = "completed"
         else:
             target_sec = "backlog"
-
-        sec_start, sec_end = sections[target_sec]
-        ins = sec_end
-        while ins > sec_start + 1 and not lines[ins - 1].strip():
-            ins -= 1
-
-        to_insert = [""] + entry_lines if ins > 0 and lines[ins - 1].strip() else entry_lines
-        lines[ins:ins] = to_insert
-
+        file_insert_entry_at_bottom(lines, sections, entry_lines, target_sec)
         write_text_preserving(self.file, "\n".join(lines), le, bom)
         return [self.file]
 
     def close(self, task_id: str, status: str, outcome: str) -> list[Path]:
         lines, le, bom, sections = self._load()
-        target = self.find(task_id)
-        if not target or not target.span:
-            raise TaskError(f"Task [{task_id}] not found in {self.file}")
-
-        start, end = target.span
-        entry_lines = list(lines[start:end])
-        del lines[start:end]
-
+        entry_lines, _ = file_extract_entry(lines, task_id)
         today = datetime.date.today().isoformat()
-        # 1. Status: Closed
-        for i, l in enumerate(entry_lines):
-            if l.startswith("- **Status**:"):
-                entry_lines[i] = re.sub(r"`(Open|In Progress|Closed)`", f"`{status}`", l)
-                break
-
-        # 2. Resolved line (Decision 19 / D5)
-        has_resolved = False
-        last_meta_idx = -1
-        for i, l in enumerate(entry_lines):
-            if l.startswith("- **"):
-                last_meta_idx = i
-            if l.startswith("- **Resolved**:"):
-                has_resolved = True
-                entry_lines[i] = f"- **Resolved**: {today}"
-                break
-        if not has_resolved and last_meta_idx != -1:
-            entry_lines.insert(last_meta_idx + 1, f"- **Resolved**: {today}")
-
-        # 3. Outcome (Decision 19)
-        outcome_idx = None
-        for i, l in enumerate(entry_lines):
-            if l.strip() == "#### Outcome":
-                outcome_idx = i
-                break
-
-        if outcome_idx is not None:
-            # Full style
-            # If placeholder in parentheses, replace it; otherwise add paragraph below
-            next_idx = outcome_idx + 1
-            while next_idx < len(entry_lines) and not entry_lines[next_idx].strip():
-                next_idx += 1
-            if next_idx < len(entry_lines) and re.match(r"^\s*\(.*\)\s*$", entry_lines[next_idx]):
-                entry_lines[next_idx] = outcome
-            else:
-                entry_lines.append("")
-                entry_lines.append(outcome)
-        else:
-            # Compact style: add *Outcome (<date>):* <text> at end
-            entry_lines.append("")
-            entry_lines.append(f"*Outcome ({today}):* {outcome}")
-
-        # 4. Move to bottom of Completed section
+        entry_set_status(entry_lines, status, resolved_date=today)
+        entry_set_outcome(entry_lines, outcome, today)
         sections = find_sections(lines)
-        c_start, c_end = sections["completed"]
-        ins = c_end
-        while ins > c_start + 1 and not lines[ins - 1].strip():
-            ins -= 1
-
-        to_insert = [""] + entry_lines if ins > 0 and lines[ins - 1].strip() else entry_lines
-        lines[ins:ins] = to_insert
-
+        file_insert_entry_at_bottom(lines, sections, entry_lines, "completed")
         write_text_preserving(self.file, "\n".join(lines), le, bom)
         return [self.file]
 
     def append_note(self, task_id: str, text: str) -> list[Path]:
-        lines, le, bom, sections = self._load()
-        target = self.find(task_id)
-        if not target or not target.span:
+        lines, le, bom, _ = self._load()
+        res = file_find_entry(lines, task_id, path=self.file, line_ending=le)
+        if not res:
             raise TaskError(f"Task [{task_id}] not found in {self.file}")
-
-        start, end = target.span
+        start, end, _ = res
         entry_lines = list(lines[start:end])
         today = datetime.date.today().isoformat()
-        note_line = f"- {today}: {text}"
-
-        is_full = any(l.strip().startswith("#### ") for l in entry_lines)
-        if is_full:
-            notes_idx = None
-            outcome_idx = None
-            for i, l in enumerate(entry_lines):
-                if l.strip() == "#### Notes":
-                    notes_idx = i
-                if l.strip() == "#### Outcome":
-                    outcome_idx = i
-
-            if notes_idx is not None:
-                # Append under #### Notes
-                ins = notes_idx + 1
-                while ins < len(entry_lines) and not entry_lines[ins].strip().startswith("#### "):
-                    ins += 1
-                entry_lines.insert(ins, note_line)
-            else:
-                # Create #### Notes just before #### Outcome or at end
-                insert_before = outcome_idx if outcome_idx is not None else len(entry_lines)
-                entry_lines[insert_before:insert_before] = ["#### Notes", note_line, ""]
-        else:
-            # Compact: add at end of prose before *Wanted:*
-            wanted_idx = None
-            for i, l in enumerate(entry_lines):
-                if l.strip().startswith("*Wanted:*"):
-                    wanted_idx = i
-                    break
-            if wanted_idx is not None:
-                entry_lines.insert(wanted_idx, note_line)
-                entry_lines.insert(wanted_idx + 1, "")
-            else:
-                entry_lines.append(note_line)
-
+        entry_append_note(entry_lines, text, today, h_prefix="####")
         lines[start:end] = entry_lines
         write_text_preserving(self.file, "\n".join(lines), le, bom)
         return [self.file]
@@ -658,30 +710,8 @@ class SplitFilesLayout(BaseLayout):
 
     def add(self, item: Item, style: str = "full") -> list[Path]:
         lines, le, bom, sections = self._load_open()
-        b_start, b_end = sections["backlog"]
-
-        new_rank = PRIORITY_RANK.get(item.priority, 2)
-        entries = parse_markdown_entries(lines)
-        backlog_entries = [
-            (s, e, item_from_entry_lines(lines[s:e])) for s, e, _, _ in entries if s >= b_start and e <= b_end
-        ]
-
-        same_prio = [e for e in backlog_entries if PRIORITY_RANK.get(e[2].priority, 2) == new_rank]
-        lower_prio = [e for e in backlog_entries if PRIORITY_RANK.get(e[2].priority, 2) > new_rank]
-
-        if same_prio:
-            ins = same_prio[-1][1]
-        elif lower_prio:
-            ins = lower_prio[0][0]
-        else:
-            ins = b_end
-            while ins > b_start + 1 and not lines[ins - 1].strip():
-                ins -= 1
-
         entry_lines = render_entry_lines(item, style=style, h_prefix="###")
-        to_insert = [""] + entry_lines if ins > 0 and lines[ins - 1].strip() else entry_lines
-        lines[ins:ins] = to_insert
-
+        file_insert_entry_by_priority(lines, sections, entry_lines)
         write_text_preserving(self.open_file, "\n".join(lines), le, bom)
         return [self.open_file]
 
@@ -690,126 +720,66 @@ class SplitFilesLayout(BaseLayout):
         if not target or not target.span or not target.path:
             raise TaskError(f"Task [{task_id}] not found in backlog")
 
-        if target.path == self.open_file and status in ("Open", "In Progress"):
+        today = datetime.date.today().isoformat()
+        is_closing = status in ("Closed", "Rejected", "Cancelled")
+
+        if target.path == self.open_file and not is_closing:
             lines, le, bom, sections = self._load_open()
-            start, end = target.span
-            entry_lines = list(lines[start:end])
-            del lines[start:end]
-
-            for i, l in enumerate(entry_lines):
-                if l.startswith("- **Status**:"):
-                    entry_lines[i] = re.sub(r"`(Open|In Progress)`", f"`{status}`", l)
-                    break
-
+            entry_lines, _ = file_extract_entry(lines, task_id)
+            entry_set_status(entry_lines, status)
             sections = find_sections(lines)
             target_sec = "in progress" if status == "In Progress" else "backlog"
-            sec_start, sec_end = sections[target_sec]
-            ins = sec_end
-            while ins > sec_start + 1 and not lines[ins - 1].strip():
-                ins -= 1
-
-            to_insert = [""] + entry_lines if ins > 0 and lines[ins - 1].strip() else entry_lines
-            lines[ins:ins] = to_insert
-
+            file_insert_entry_at_bottom(lines, sections, entry_lines, target_sec)
             write_text_preserving(self.open_file, "\n".join(lines), le, bom)
             return [self.open_file]
 
-        # Moving from Open.md to Closed.md (Icebox / Completed)
-        open_lines, o_le, o_bom, _ = self._load_open()
-        closed_lines, c_le, c_bom, _ = self._load_closed()
+        if target.path == self.open_file:
+            open_lines, o_le, o_bom, _ = self._load_open()
+            entry_lines, _ = file_extract_entry(open_lines, task_id)
+            entry_set_status(entry_lines, status, resolved_date=(today if is_closing else None))
+            write_text_preserving(self.open_file, "\n".join(open_lines), o_le, o_bom)
 
-        start, end = target.span
-        entry_lines = list(open_lines[start:end])
-        del open_lines[start:end]
-
-        today = datetime.date.today().isoformat()
-        for i, l in enumerate(entry_lines):
-            if l.startswith("- **Status**:"):
-                entry_lines[i] = re.sub(r"`(Open|In Progress)`", f"`{status}`", l)
-                break
-
-        has_resolved = any(l.startswith("- **Resolved**:") for l in entry_lines)
-        if not has_resolved:
-            for idx in range(len(entry_lines) - 1, -1, -1):
-                if entry_lines[idx].startswith("- **"):
-                    entry_lines.insert(idx + 1, f"- **Resolved**: {today}")
-                    break
-
-        c_sections = find_sections(closed_lines)
-        target_sec = "completed" if status == "Closed" else "icebox"
-        sec_start, sec_end = c_sections[target_sec]
-        ins = sec_end
-        while ins > sec_start + 1 and not closed_lines[ins - 1].strip():
-            ins -= 1
-
-        to_insert = [""] + entry_lines if ins > 0 and closed_lines[ins - 1].strip() else entry_lines
-        closed_lines[ins:ins] = to_insert
-
-        write_text_preserving(self.open_file, "\n".join(open_lines), o_le, o_bom)
-        write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
-        return [self.open_file, self.closed_file]
+            closed_lines, c_le, c_bom, sections = self._load_closed()
+            target_sec = "completed" if status == "Closed" else "icebox"
+            file_insert_entry_at_bottom(closed_lines, sections, entry_lines, target_sec)
+            write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
+            return [self.open_file, self.closed_file]
+        else:
+            closed_lines, c_le, c_bom, sections = self._load_closed()
+            entry_lines, _ = file_extract_entry(closed_lines, task_id)
+            entry_set_status(entry_lines, status, resolved_date=(today if is_closing else None))
+            sections = find_sections(closed_lines)
+            target_sec = "completed" if status == "Closed" else "icebox"
+            file_insert_entry_at_bottom(closed_lines, sections, entry_lines, target_sec)
+            write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
+            return [self.closed_file]
 
     def close(self, task_id: str, status: str, outcome: str) -> list[Path]:
         target = self.find(task_id)
         if not target or not target.span or not target.path:
             raise TaskError(f"Task [{task_id}] not found in backlog")
 
-        open_lines, o_le, o_bom, _ = self._load_open()
-        closed_lines, c_le, c_bom, _ = self._load_closed()
-
-        start, end = target.span
-        entry_lines = list(open_lines[start:end])
-        del open_lines[start:end]
-
         today = datetime.date.today().isoformat()
-        for i, l in enumerate(entry_lines):
-            if l.startswith("- **Status**:"):
-                entry_lines[i] = re.sub(r"`(Open|In Progress)`", f"`{status}`", l)
-                break
+        if target.path == self.open_file:
+            open_lines, o_le, o_bom, _ = self._load_open()
+            entry_lines, _ = file_extract_entry(open_lines, task_id)
+            entry_set_status(entry_lines, status, resolved_date=today)
+            entry_set_outcome(entry_lines, outcome, today)
+            write_text_preserving(self.open_file, "\n".join(open_lines), o_le, o_bom)
 
-        has_resolved = False
-        last_meta_idx = -1
-        for i, l in enumerate(entry_lines):
-            if l.startswith("- **"):
-                last_meta_idx = i
-            if l.startswith("- **Resolved**:"):
-                has_resolved = True
-                entry_lines[i] = f"- **Resolved**: {today}"
-                break
-        if not has_resolved and last_meta_idx != -1:
-            entry_lines.insert(last_meta_idx + 1, f"- **Resolved**: {today}")
-
-        outcome_idx = None
-        for i, l in enumerate(entry_lines):
-            if l.strip() == "#### Outcome":
-                outcome_idx = i
-                break
-
-        if outcome_idx is not None:
-            next_idx = outcome_idx + 1
-            while next_idx < len(entry_lines) and not entry_lines[next_idx].strip():
-                next_idx += 1
-            if next_idx < len(entry_lines) and re.match(r"^\s*\(.*\)\s*$", entry_lines[next_idx]):
-                entry_lines[next_idx] = outcome
-            else:
-                entry_lines.append("")
-                entry_lines.append(outcome)
+            closed_lines, c_le, c_bom, sections = self._load_closed()
+            file_insert_entry_at_bottom(closed_lines, sections, entry_lines, "completed")
+            write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
+            return [self.open_file, self.closed_file]
         else:
-            entry_lines.append("")
-            entry_lines.append(f"*Outcome ({today}):* {outcome}")
-
-        c_sections = find_sections(closed_lines)
-        c_start, c_end = c_sections["completed"]
-        ins = c_end
-        while ins > c_start + 1 and not closed_lines[ins - 1].strip():
-            ins -= 1
-
-        to_insert = [""] + entry_lines if ins > 0 and closed_lines[ins - 1].strip() else entry_lines
-        closed_lines[ins:ins] = to_insert
-
-        write_text_preserving(self.open_file, "\n".join(open_lines), o_le, o_bom)
-        write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
-        return [self.open_file, self.closed_file]
+            closed_lines, c_le, c_bom, sections = self._load_closed()
+            entry_lines, _ = file_extract_entry(closed_lines, task_id)
+            entry_set_status(entry_lines, status, resolved_date=today)
+            entry_set_outcome(entry_lines, outcome, today)
+            sections = find_sections(closed_lines)
+            file_insert_entry_at_bottom(closed_lines, sections, entry_lines, "completed")
+            write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
+            return [self.closed_file]
 
     def append_note(self, task_id: str, text: str) -> list[Path]:
         target = self.find(task_id)
@@ -819,41 +789,13 @@ class SplitFilesLayout(BaseLayout):
         target_file = target.path
         text_content, le, bom = read_text_preserving(target_file)
         lines = text_content.splitlines()
-        start, end = target.span
+        res = file_find_entry(lines, task_id, path=target_file, line_ending=le)
+        if not res:
+            raise TaskError(f"Task [{task_id}] not found in {target_file}")
+        start, end, _ = res
         entry_lines = list(lines[start:end])
         today = datetime.date.today().isoformat()
-        note_line = f"- {today}: {text}"
-
-        is_full = any(l.strip().startswith("#### ") for l in entry_lines)
-        if is_full:
-            notes_idx = None
-            outcome_idx = None
-            for i, l in enumerate(entry_lines):
-                if l.strip() == "#### Notes":
-                    notes_idx = i
-                if l.strip() == "#### Outcome":
-                    outcome_idx = i
-
-            if notes_idx is not None:
-                ins = notes_idx + 1
-                while ins < len(entry_lines) and not entry_lines[ins].strip().startswith("#### "):
-                    ins += 1
-                entry_lines.insert(ins, note_line)
-            else:
-                insert_before = outcome_idx if outcome_idx is not None else len(entry_lines)
-                entry_lines[insert_before:insert_before] = ["#### Notes", note_line, ""]
-        else:
-            wanted_idx = None
-            for i, l in enumerate(entry_lines):
-                if l.strip().startswith("*Wanted:*"):
-                    wanted_idx = i
-                    break
-            if wanted_idx is not None:
-                entry_lines.insert(wanted_idx, note_line)
-                entry_lines.insert(wanted_idx + 1, "")
-            else:
-                entry_lines.append(note_line)
-
+        entry_append_note(entry_lines, text, today, h_prefix="####")
         lines[start:end] = entry_lines
         write_text_preserving(target_file, "\n".join(lines), le, bom)
         return [target_file]
@@ -1112,38 +1054,7 @@ class ItemFoldersLayout(BaseLayout):
         content, le, bom = read_text_preserving(file_path)
         lines = content.splitlines()
         today = datetime.date.today().isoformat()
-        note_line = f"- {today}: {text}"
-
-        is_full = any(l.strip().startswith("## ") for l in lines)
-        if is_full:
-            notes_idx = None
-            outcome_idx = None
-            for i, l in enumerate(lines):
-                if l.strip() == "## Notes":
-                    notes_idx = i
-                if l.strip() == "## Outcome":
-                    outcome_idx = i
-
-            if notes_idx is not None:
-                ins = notes_idx + 1
-                while ins < len(lines) and not lines[ins].strip().startswith("## "):
-                    ins += 1
-                lines.insert(ins, note_line)
-            else:
-                insert_before = outcome_idx if outcome_idx is not None else len(lines)
-                lines[insert_before:insert_before] = ["## Notes", note_line, ""]
-        else:
-            wanted_idx = None
-            for i, l in enumerate(lines):
-                if l.strip().startswith("*Wanted:*"):
-                    wanted_idx = i
-                    break
-            if wanted_idx is not None:
-                lines.insert(wanted_idx, note_line)
-                lines.insert(wanted_idx + 1, "")
-            else:
-                lines.append(note_line)
-
+        entry_append_note(lines, text, today, h_prefix="##")
         write_text_preserving(file_path, "\n".join(lines), le, bom)
         return [file_path]
 

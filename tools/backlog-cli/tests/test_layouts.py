@@ -479,3 +479,196 @@ def test_compact_entry_style(tmp_path: Path):
     assert "*Wanted:* Quick fix." in found.raw
     assert "*Done when:* One criterion verified." in found.raw
     assert "#### Acceptance Criteria" not in found.raw
+
+
+# ---------------------------------------------------------------------------
+# Defect Tests B1, B2, B3 (Decision 22)
+# ---------------------------------------------------------------------------
+
+PROBE_ENTRY_SINGLE = """# Project Backlog
+
+> **How this backlog is run** (`convention/backlog`)
+> - **Layout:** single file
+
+## 📋 In Progress
+
+### [#001] Probe test task
+- **Status**: `In Progress` | **Priority**: `P1`
+- **Created**: 2026-10-01
+
+#### Why
+- **Note** prose.
+
+#### Wanted
+Something.
+
+#### Acceptance Criteria
+- [ ] #1 Tests pass.
+
+#### Notes
+- 2026-10-01: first
+
+#### Outcome
+(Filled on completion.)
+
+## 📌 Backlog (Open Tasks)
+
+## ✅ Completed
+
+## 🧊 Icebox (Not Doing / Rejected)
+"""
+
+PROBE_ENTRY_SPLIT_OPEN = """# Open Tasks
+
+> **How this backlog is run** (`convention/backlog`)
+> - **Layout:** split files
+
+## 📋 In Progress
+
+### [#001] Probe test task
+- **Status**: `In Progress` | **Priority**: `P1`
+- **Created**: 2026-10-01
+
+#### Why
+- **Note** prose.
+
+#### Wanted
+Something.
+
+#### Acceptance Criteria
+- [ ] #1 Tests pass.
+
+#### Notes
+- 2026-10-01: first
+
+#### Outcome
+(Filled on completion.)
+
+## 📌 Backlog (Open Tasks)
+"""
+
+PROBE_ENTRY_SPLIT_CLOSED = """# Closed Tasks
+
+## ✅ Completed
+
+## 🧊 Icebox (Not Doing / Rejected)
+"""
+
+PROBE_ENTRY_FOLDERS_ITEM = """---
+id: "#001"
+title: Probe test task
+status: In Progress
+priority: P1
+created: 2026-10-01
+---
+
+# [#001] Probe test task
+
+## Why
+- **Note** prose.
+
+## Wanted
+Something.
+
+## Acceptance Criteria
+- [ ] #1 Tests pass.
+
+## Notes
+- 2026-10-01: first
+
+## Outcome
+(Filled on completion.)
+"""
+
+
+def test_b1_resolved_metadata_block_single(tmp_path: Path):
+    """B1: close puts Resolved in metadata block under heading, not inside Why."""
+    p = tmp_path / "BACKLOG.md"
+    p.write_text(PROBE_ENTRY_SINGLE, encoding="utf-8")
+    layout = SingleFileLayout(p)
+
+    layout.close("#001", "Closed", "Done.")
+    text = p.read_text(encoding="utf-8")
+
+    # Resolved must be under Created, before Why
+    assert "- **Created**: 2026-10-01\n- **Resolved**:" in text
+    # Why must keep its bullet without Resolved inside it
+    assert "#### Why\n- **Note** prose.\n\n#### Wanted" in text
+
+
+def test_b1_resolved_metadata_block_split(tmp_path: Path):
+    """B1 (split): close puts Resolved in metadata block under heading in Closed.md."""
+    bdir = tmp_path / "BACKLOG"
+    bdir.mkdir(parents=True, exist_ok=True)
+    (bdir / "00_BACKLOG.md").write_text("# Backlog Header\n", encoding="utf-8")
+    (bdir / "Open.md").write_text(PROBE_ENTRY_SPLIT_OPEN, encoding="utf-8")
+    (bdir / "Closed.md").write_text(PROBE_ENTRY_SPLIT_CLOSED, encoding="utf-8")
+    layout = SplitFilesLayout(bdir)
+
+    layout.close("#001", "Closed", "Done.")
+    closed_text = (bdir / "Closed.md").read_text(encoding="utf-8")
+
+    assert "- **Created**: 2026-10-01\n- **Resolved**:" in closed_text
+    assert "#### Why\n- **Note** prose.\n\n#### Wanted" in closed_text
+
+
+def test_b2_append_note_spacing_single(tmp_path: Path):
+    """B2 (single): append_note puts new note right after last note with single blank line before heading."""
+    p = tmp_path / "BACKLOG.md"
+    p.write_text(PROBE_ENTRY_SINGLE, encoding="utf-8")
+    layout = SingleFileLayout(p)
+
+    layout.append_note("#001", "second")
+    text = p.read_text(encoding="utf-8")
+
+    # Notes section must have consecutive note bullets, then one blank line, then Outcome
+    assert "#### Notes\n- 2026-10-01: first\n- " in text
+    assert ": second\n\n#### Outcome" in text
+
+
+def test_b2_append_note_spacing_split(tmp_path: Path):
+    """B2 (split): append_note puts new note right after last note with single blank line before heading."""
+    bdir = tmp_path / "BACKLOG"
+    bdir.mkdir(parents=True, exist_ok=True)
+    (bdir / "00_BACKLOG.md").write_text("# Backlog Header\n", encoding="utf-8")
+    (bdir / "Open.md").write_text(PROBE_ENTRY_SPLIT_OPEN, encoding="utf-8")
+    (bdir / "Closed.md").write_text(PROBE_ENTRY_SPLIT_CLOSED, encoding="utf-8")
+    layout = SplitFilesLayout(bdir)
+
+    layout.append_note("#001", "second")
+    open_text = (bdir / "Open.md").read_text(encoding="utf-8")
+
+    assert "#### Notes\n- 2026-10-01: first\n- " in open_text
+    assert ": second\n\n#### Outcome" in open_text
+
+
+def test_b2_append_note_spacing_folders(tmp_path: Path):
+    """B2 (folders): append_note puts new note right after last note with single blank line before heading."""
+    bdir = tmp_path / "BACKLOG"
+    open_dir = bdir / "open"
+    open_dir.mkdir(parents=True, exist_ok=True)
+    (bdir / "closed").mkdir(parents=True, exist_ok=True)
+    (bdir / "00_BACKLOG.md").write_text("# Backlog Header\n", encoding="utf-8")
+    item_file = open_dir / "001-probe-test-task.md"
+    item_file.write_text(PROBE_ENTRY_FOLDERS_ITEM, encoding="utf-8")
+    layout = ItemFoldersLayout(bdir)
+
+    layout.append_note("#001", "second")
+    item_text = item_file.read_text(encoding="utf-8")
+
+    assert "## Notes\n- 2026-10-01: first\n- " in item_text
+    assert ": second\n\n## Outcome" in item_text
+
+
+def test_b3_close_single_blank_line_spacing(tmp_path: Path):
+    """B3 (single): closing a full entry leaves exactly one blank line after Outcome, not two."""
+    p = tmp_path / "BACKLOG.md"
+    p.write_text(PROBE_ENTRY_SINGLE, encoding="utf-8")
+    layout = SingleFileLayout(p)
+
+    layout.close("#001", "Closed", "Done.")
+    text = p.read_text(encoding="utf-8")
+
+    # In Completed section, after Outcome\nDone. there must be exactly one blank line before ## 🧊 Icebox
+    assert "#### Outcome\nDone.\n\n## 🧊 Icebox" in text
+    assert "#### Outcome\nDone.\n\n\n## 🧊 Icebox" not in text
