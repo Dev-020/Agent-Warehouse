@@ -8,9 +8,15 @@ entrypoint: task.py
 requires-software: [python>=3.10, git]
 platforms: [windows, linux, darwin]
 settings:
+  backlog_layout:
+    description: "Backlog layout: 'single' (one file), 'split' (a folder of files), 'folders' (one file or folder per item) or 'tracker' (an external issue tracker)"
+    default: "single"
   backlog_file:
-    description: "Path to the project backlog file"
+    description: "Path to the backlog file when backlog_layout is 'single'"
     default: "BACKLOG.md"
+  backlog_dir:
+    description: "Path to the backlog folder when backlog_layout is 'split', 'folders' or 'tracker'"
+    default: "BACKLOG"
 requires: []
 replaces: null
 ---
