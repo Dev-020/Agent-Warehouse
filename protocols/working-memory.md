@@ -1,6 +1,6 @@
 ---
 id: protocol/working-memory
-version: 0.2.0
+version: 0.2.1
 status: draft
 summary: "Using markdown notes as agent external working memory to manage context limits and prevent hallucinations."
 applies-to: [vault, codebase]
@@ -187,6 +187,8 @@ Skipping intermediate notes files and jumping straight to implementation is the 
 ## Changelog
 
 ### [Unreleased]
+
+### [0.2.1] - 2026-10-17
 #### Changed
 - Wording: "handoff" is now "hand-over", matching `protocol/phased-implementation`'s terms. No rule
   changed.

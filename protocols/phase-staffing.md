@@ -1,6 +1,6 @@
 ---
 id: protocol/phase-staffing
-version: 0.1.1
+version: 0.2.0
 status: draft
 summary: Before a phase or task is built, decide staffing from three things in order (size, coupling, model), show the user the table, and verify every agent's report against its raw evidence.
 applies-to: [codebase]
@@ -134,6 +134,8 @@ A report may quote what a model claimed happened rather than what the execution 
 ## Changelog
 
 ### [Unreleased]
+
+### [0.2.0] - 2026-10-17
 #### Changed
 - "Handing a phase to a second pipeline" is now "Handing work to another engine". Besides a complete
   second pipeline it allows a mixed split, where the other engine runs only the implementer and the

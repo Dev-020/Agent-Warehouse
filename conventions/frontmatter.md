@@ -1,6 +1,6 @@
 ---
 id: convention/frontmatter
-version: 0.2.0
+version: 0.2.1
 status: draft
 summary: Closed-vocabulary YAML frontmatter schema for markdown notes across vaults and projects.
 applies-to: [vault, codebase, warehouse]
@@ -144,6 +144,8 @@ In academic or course-scoped vaults:
 ## Changelog
 
 ### [Unreleased]
+
+### [0.2.1] - 2026-10-17
 #### Changed
 - Wording: "handoff" is now "hand-over" (state passed between sessions), matching
   `protocol/phased-implementation`'s terms. No field or value changed: `coordination_state`

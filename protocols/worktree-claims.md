@@ -1,6 +1,6 @@
 ---
 id: protocol/worktree-claims
-version: 0.1.1
+version: 0.1.2
 status: draft
 summary: Multi-agent git worktree claims, reservation semantics, branch claims, atomic locks, merge gate, and conflict avoidance across concurrent sessions.
 applies-to: [vault, codebase]
@@ -199,6 +199,8 @@ refreshes).
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.2] - 2026-10-17
 #### Changed
 - Wording: "handoff" is now "hand-over" (state passed between sessions), matching
   `protocol/phased-implementation`'s terms. No rule changed.

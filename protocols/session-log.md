@@ -1,6 +1,6 @@
 ---
 id: protocol/session-log
-version: 0.2.1
+version: 0.2.2
 status: draft
 summary: "How and when agents write session hand-over logs and maintain session indexes."
 applies-to: [vault, codebase]
@@ -190,6 +190,8 @@ However, the factual text and claims in a session log are immutable historical r
 ## Changelog
 
 ### [Unreleased]
+
+### [0.2.2] - 2026-10-17
 #### Changed
 - Wording: "handoff" is now "hand-over" (state passed between sessions), and passing work to another
   agent is described with its brief, matching `protocol/phased-implementation`'s terms. No field, value
