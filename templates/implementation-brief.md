@@ -1,6 +1,6 @@
 ---
 id: template/implementation-brief
-version: 0.1.0
+version: 0.2.0
 status: draft
 summary: Copyable brief for one phase of a phased implementation — rules, staffing row, settled Orchestrator decisions, interfaces, checkpoint steps, tests and the report format, plus an optional section for work another engine does.
 applies-to: [codebase]
@@ -148,6 +148,8 @@ Commit hash; files changed; tests added and their targeted results ([last step]:
 ## Changelog
 
 ### [Unreleased]
+
+### [0.2.0] - 2026-10-17
 #### Added
 - An optional "How this round runs" section for a phase another engine does part of, complete or mixed:
   the reason and the user's agreement, the agents per side, the channel, what the sending engine used
