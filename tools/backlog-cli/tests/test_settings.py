@@ -91,7 +91,7 @@ def test_manifest_non_scalar_backlog_key_fails(tmp_path: Path):
         read_manifest_settings(tmp_path)
     err = str(exc_info.value)
     assert "backlog_layout" in err
-    assert "3" in err  # line number 3
+    assert "Line 3:" in err  # line number 3
 
     # Inline list for backlog key
     manifest.write_text(
@@ -103,7 +103,7 @@ def test_manifest_non_scalar_backlog_key_fails(tmp_path: Path):
         read_manifest_settings(tmp_path)
     err = str(exc_info.value)
     assert "backlog_file" in err
-    assert "2" in err  # line number 2
+    assert "Line 2:" in err  # line number 2
 
 
 # ---------------------------------------------------------------------------

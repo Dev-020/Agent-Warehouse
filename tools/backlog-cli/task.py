@@ -48,11 +48,14 @@ def main(argv: list[str] | None = None) -> int:
     # open
     p_open = sub.add_parser("open", help="Create a new task entry in the backlog")
     p_open.add_argument("title", help="Task title")
-    p_open.add_argument("--prefix", default="TASK", help="ID prefix (e.g. INF, TASK, #)")
+    p_open.add_argument("--prefix", default=None, help="ID prefix (e.g. INF, TASK, #)")
+    p_open.add_argument("--new-prefix", action="store_true", help="Allow introducing a prefix not yet in use")
     p_open.add_argument("--priority", default="P2", help="P1 | P2 | P3")
     p_open.add_argument("--labels", default="Task", help="Comma-separated labels")
     p_open.add_argument("--why", default="", help="Description of motivation")
     p_open.add_argument("--wanted", default="", help="Description of desired outcome")
+    p_open.add_argument("--criterion", action="append", default=[], help="Acceptance criterion (repeatable)")
+    p_open.add_argument("--style", choices=["full", "compact"], help="Entry style (full | compact)")
     p_open.add_argument("--claim", action="store_true", help="Claim immediately after creation")
     p_open.set_defaults(func=cmd_open)
 

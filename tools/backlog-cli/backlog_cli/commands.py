@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import datetime
 import re
+import shutil
 import subprocess
 from pathlib import Path
+from typing import Callable
 
 from backlog_cli import TaskError
 from backlog_cli.gitops import (
@@ -14,6 +16,7 @@ from backlog_cli.gitops import (
     CFG_ROOT,
     STALE_DAYS,
     MergeLock,
+    Restorable,
     branch_created_at,
     branch_exists,
     branch_last_activity,
@@ -24,13 +27,69 @@ from backlog_cli.gitops import (
     git,
     git_dir,
     repo_root,
-    staged_differs,
     worktree_list,
-    write_atomic,
 )
-from backlog_cli.ids import find_next_id
-from backlog_cli.layouts import PRIORITY_LEVELS, find_task_span, locate_section
+from backlog_cli.ids import allocate_id
+from backlog_cli.layouts import PRIORITY_LEVELS, get_layout
+from backlog_cli.model import Item
 from backlog_cli.settings import load_settings
+
+
+def safe_commit(
+    root: Path,
+    message: str,
+    pre_check_paths: list[Path],
+    action_fn: Callable[[], list[Path]],
+) -> None:
+    """Safely execute action_fn and commit only the written paths adhering to Decision 17.
+
+    Refuses if any path has uncommitted changes.
+    Restores files and deletes newly created files if commit fails.
+    """
+    existing_paths = [p for p in pre_check_paths if p.exists()]
+    dirt = content_dirt(root, *[str(p) for p in existing_paths])
+    if dirt.strip():
+        raise TaskError(f"Cannot modify backlog: uncommitted changes in target paths:\n{dirt}")
+
+    with Restorable(existing_paths):
+        paths_before = set(existing_paths)
+        written_paths = action_fn()
+        created_paths = [p for p in written_paths if p not in paths_before and p.exists()]
+
+        try:
+            rel_paths: list[str] = []
+            for p in written_paths:
+                try:
+                    rel_paths.append(p.relative_to(root).as_posix())
+                except ValueError:
+                    rel_paths.append(str(p))
+            for p in paths_before:
+                if not p.exists():
+                    try:
+                        rel_paths.append(p.relative_to(root).as_posix())
+                    except ValueError:
+                        rel_paths.append(str(p))
+
+            git("add", "--", *rel_paths, cwd=root)
+            trailer = "Co-Authored-By: Gemini 3.8 Flash High (Antigravity) <noreply@google.com>"
+            summary = message[:72]
+            git("commit", "-m", summary, "-m", trailer, "--", *rel_paths, cwd=root)
+        except Exception as exc:
+            if rel_paths:
+                git("reset", "--", *rel_paths, cwd=root, check=False)
+            for p in created_paths:
+                if p.exists():
+                    if p.is_dir():
+                        shutil.rmtree(p, ignore_errors=True)
+                    else:
+                        try:
+                            p.unlink()
+                        except OSError:
+                            pass
+            err_str = str(exc)
+            if "git commit" in err_str or "git add" in err_str:
+                raise TaskError(err_str)
+            raise
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -39,6 +98,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     root = repo_root(cwd)
     problems: list[str] = []
     notes: list[str] = []
+    warnings: list[str] = []
 
     if args.init:
         # Decision 6: doctor --init no longer writes backlog.file
@@ -52,7 +112,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     # Report layout
     notes.append(f"layout: {settings.layout} ({settings.sources['layout']})")
 
-    # Backlog file or folder
+    # Backlog file or folder (Decision 11)
     if settings.layout == "single":
         if settings.backlog_file.is_file():
             notes.append(f"backlog file: {settings.backlog_file} ({settings.sources['backlog_file']})")
@@ -60,13 +120,46 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             problems.append(
                 f"Backlog file not found at {settings.backlog_file} ({settings.sources['backlog_file']}). Create one or run doctor --init."
             )
-    else:  # split or folders
-        if settings.backlog_dir.is_dir():
+    elif settings.layout == "split":
+        bdir = settings.backlog_dir
+        hdr = bdir / "00_BACKLOG.md"
+        opn = bdir / "Open.md"
+        cls = bdir / "Closed.md"
+        missing = [p for p in (hdr, opn, cls) if not p.is_file()]
+        if not missing:
             notes.append(f"backlog folder: {settings.backlog_dir} ({settings.sources['backlog_dir']})")
         else:
-            problems.append(
-                f"Backlog folder not found at {settings.backlog_dir} ({settings.sources['backlog_dir']})."
-            )
+            for p in missing:
+                problems.append(f"Backlog file not found at {p} ({settings.sources['backlog_dir']}).")
+
+        # Warn but don't fail if .gitattributes has no merge=union line for Closed.md
+        gitattrs = root / ".gitattributes"
+        has_union = False
+        if gitattrs.is_file():
+            text = gitattrs.read_text(encoding="utf-8")
+            for line in text.splitlines():
+                if "Closed.md" in line and "merge=union" in line:
+                    has_union = True
+                    break
+        if not has_union:
+            warnings.append(".gitattributes has no merge=union line for Closed.md")
+    else:  # folders
+        bdir = settings.backlog_dir
+        hdr = bdir / "00_BACKLOG.md"
+        opn = bdir / "open"
+        cls = bdir / "closed"
+        missing = []
+        if not hdr.is_file():
+            missing.append(hdr)
+        if not opn.is_dir():
+            missing.append(opn)
+        if not cls.is_dir():
+            missing.append(cls)
+        if not missing:
+            notes.append(f"backlog folder: {settings.backlog_dir} ({settings.sources['backlog_dir']})")
+        else:
+            for p in missing:
+                problems.append(f"Backlog file or folder not found at {p} ({settings.sources['backlog_dir']}).")
 
     # Worktree root
     if settings.worktree_root.is_dir():
@@ -86,6 +179,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     for n in notes:
         print(f"  ok    {n}")
+    for w in warnings:
+        print(f"  WARN  {w}")
     for p in problems:
         print(f"  WARN  {p}")
 
@@ -129,67 +224,69 @@ def cmd_open(args: argparse.Namespace) -> int:
     """Create a new backlog item and allocate next ID."""
     cwd = Path.cwd()
     root = repo_root(cwd)
-    settings = load_settings(root)
-    if settings.layout != "single":
-        raise TaskError(f"layout '{settings.layout}' is not supported yet")
-    bpath = settings.backlog_file
-    if not bpath.is_file():
-        raise TaskError(f"Backlog file does not exist at {bpath}")
+    trees = worktree_list(root)
+    current_branch = git("branch", "--show-current", cwd=root, check=False).strip()
 
-    prefix = args.prefix or "TASK"
+    # Decision 16 (S9): Inside claim/* worktree, write and commit there; otherwise primary worktree
+    if current_branch.startswith(BRANCH_PREFIX):
+        target_root = root
+    else:
+        target_root = Path(trees[0]["path"]).resolve() if trees else root
+
+    settings = load_settings(target_root)
+    layout = get_layout(settings)
+
+    # Decision 14: Entry style from header or --style
+    hdr = layout.header()
+    header_style = "full"
+    m_style = re.search(r"[-*]\s*\*\*Entry style:\*\*\s*(.+)", hdr, re.IGNORECASE)
+    if m_style:
+        s_val = m_style.group(1).strip().lower()
+        if "compact" in s_val and "full" not in s_val:
+            header_style = "compact"
+    style = args.style or header_style
+
+    criteria = args.criterion or []
+    if style == "compact" and len(criteria) > 1:
+        raise TaskError("compact style allows at most one --criterion ('Done when')")
+
     priority = args.priority.upper()
     if priority not in PRIORITY_LEVELS:
         raise TaskError(f"Invalid priority {priority!r}. Must be one of {PRIORITY_LEVELS}")
 
-    text = bpath.read_text(encoding="utf-8")
-    task_id = find_next_id(prefix, text)
+    # Decision 13: Collect every ID from every file or item, open and closed
+    existing_ids = [it.id for it in layout.items()]
+    task_id = allocate_id(existing_ids, prefix=args.prefix, new_prefix=args.new_prefix)
+
     today = datetime.date.today().isoformat()
+    fields: dict[str, Any] = {
+        "created": today,
+        "why": args.why.strip() if args.why else "",
+        "wanted": args.wanted.strip() if args.wanted else "",
+        "criteria": criteria,
+    }
+    if args.labels and args.labels != "Task":
+        fields["labels"] = args.labels.strip()
 
-    entry_lines = [
-        f"### [{task_id}] {args.title.strip()}",
-        f"- **Status**: `Open` | **Priority**: `{priority}` | **Labels**: `{args.labels or 'Task'}`",
-        f"- **Created**: {today}",
-        "",
-        "#### Why",
-        args.why or "Task objective and background context.",
-        "",
-        "#### Wanted",
-        args.wanted or "Desired outcome and deliverables.",
-        "",
-        "#### Acceptance Criteria",
-        "- [ ] #1 Implementation complete and verified.",
-        "",
-        "#### Outcome",
-        "- (Pending completion)",
-        "",
-    ]
+    item = Item(
+        id=task_id,
+        title=args.title.strip(),
+        status="Open",
+        priority=priority,
+        fields=fields,
+    )
 
-    lines = text.splitlines()
-    loc = locate_section(lines, r"Backlog|Open Tasks")
-    if loc is None:
-        # Fallback: append before Completed or at end
-        loc = locate_section(lines, r"Completed")
-        if loc is None:
-            lines.extend(["", "## 📌 Backlog (Open Tasks)", ""])
-            loc = len(lines) - 1
+    commit_msg = f"chore(backlog): open [{task_id}] {args.title.strip()}"[:72]
+    pre_paths = layout.paths_for()
 
-    # Insert under backlog section
-    insert_at = loc + 1
-    while insert_at < len(lines) and (not lines[insert_at].strip() or lines[insert_at].startswith("<!--")):
-        insert_at += 1
+    def do_add():
+        return layout.add(item, style=style)
 
-    lines[insert_at:insert_at] = [""] + entry_lines
-    write_atomic(bpath, "\n".join(lines).rstrip() + "\n")
-    try:
-        rel_bpath = bpath.relative_to(root).as_posix()
-        git("add", rel_bpath, cwd=root)
-        git("commit", "-m", f"{task_id}: open — {args.title.strip()}", cwd=root)
-    except Exception:
-        pass
-    print(f"Created backlog item [{task_id}]: {args.title}")
+    safe_commit(target_root, commit_msg, pre_paths, do_add)
+    print(f"Created backlog item [{task_id}]: {args.title.strip()}")
 
     if args.claim:
-        return cmd_claim(argparse.Namespace(id=task_id, backlog_path=str(bpath)))
+        return cmd_claim(argparse.Namespace(id=task_id, backlog_path=None))
     return 0
 
 
@@ -199,57 +296,44 @@ def cmd_claim(args: argparse.Namespace) -> int:
     root = repo_root(cwd)
     custom_backlog = getattr(args, "backlog_path", None)
     settings = load_settings(root, backlog_path=custom_backlog)
-    if settings.layout != "single":
-        raise TaskError(f"layout '{settings.layout}' is not supported yet")
-    bpath = settings.backlog_file
-    task_id = args.id.lstrip("#")
-    branch = f"{BRANCH_PREFIX}{task_id}"
+    layout = get_layout(settings)
+
+    task_id = args.id.strip().strip("'\"").strip("[]")
+    # Decision 18: Refuse before creating branch if not found or not Open
+    item = layout.find(task_id)
+    if not item:
+        raise TaskError(f"Task [{task_id}] not found in backlog.")
+    if item.status != "Open":
+        raise TaskError(f"Task [{task_id}] has status '{item.status}', expected 'Open'.")
+
+    clean_id = task_id.lstrip("#")
+    branch = f"{BRANCH_PREFIX}{clean_id}"
 
     if branch_exists(branch, cwd=root):
         raise TaskError(f"Task [{task_id}] is already claimed: branch {branch} exists.")
 
     wroot = settings.worktree_root
     wroot.mkdir(parents=True, exist_ok=True)
-    target_dir = (wroot / task_id).resolve()
+    target_dir = (wroot / clean_id).resolve()
 
     if target_dir.exists():
         raise TaskError(f"Directory {target_dir} already exists on disk but has no claim branch.")
 
-    # Atomic step: create branch and worktree
     try:
         git("worktree", "add", str(target_dir), "-b", branch, cwd=root)
     except TaskError as exc:
         raise TaskError(f"Could not create worktree for [{task_id}]:\n{exc}")
 
-    # Update status inside worktree
     try:
-        wt_bpath = target_dir / bpath.relative_to(root)
-        if wt_bpath.is_file():
-            content = wt_bpath.read_text(encoding="utf-8")
-            lines = content.splitlines()
-            span = find_task_span(lines, task_id)
-            if span:
-                start, end = span
-                block = lines[start:end]
-                # Update status
-                for idx, bl in enumerate(block):
-                    if "**Status**:" in bl:
-                        block[idx] = re.sub(r"`Open`", "`In Progress`", bl)
-                # Move to In Progress section if present
-                in_prog_idx = locate_section(lines, r"In Progress")
-                if in_prog_idx is not None:
-                    del lines[start:end]
-                    ins = in_prog_idx + 1
-                    while ins < len(lines) and (not lines[ins].strip() or lines[ins].startswith("<!--")):
-                        ins += 1
-                    lines[ins:ins] = [""] + block
-                else:
-                    lines[start:end] = block
-                write_atomic(wt_bpath, "\n".join(lines).rstrip() + "\n")
-                git("add", str(wt_bpath), cwd=target_dir)
-                git("commit", "-m", f"{task_id}: claim", "--no-verify", cwd=target_dir)
+        wt_settings = load_settings(target_dir)
+        wt_layout = get_layout(wt_settings)
+
+        def do_claim():
+            return wt_layout.set_status(task_id, "In Progress")
+
+        summary = f"chore(backlog): claim [{task_id}]"[:72]
+        safe_commit(target_dir, summary, wt_layout.paths_for(task_id), do_claim)
     except Exception:
-        # Roll back on error
         git("worktree", "remove", "--force", str(target_dir), cwd=root, check=False)
         git("branch", "-D", branch, cwd=root, check=False)
         raise
@@ -266,8 +350,9 @@ def cmd_adopt(args: argparse.Namespace) -> int:
     cwd = Path.cwd()
     root = repo_root(cwd)
     settings = load_settings(root)
-    task_id = args.id.lstrip("#")
-    branch = f"{BRANCH_PREFIX}{task_id}"
+    task_id = args.id.strip().strip("'\"").strip("[]")
+    clean_id = task_id.lstrip("#")
+    branch = f"{BRANCH_PREFIX}{clean_id}"
 
     if not branch_exists(branch, cwd=root):
         raise TaskError(f"Task [{task_id}] is not claimed (branch {branch} does not exist).")
@@ -278,7 +363,7 @@ def cmd_adopt(args: argparse.Namespace) -> int:
             return 0
 
     wroot = settings.worktree_root
-    recreated = (wroot / task_id).resolve()
+    recreated = (wroot / clean_id).resolve()
     raise TaskError(
         f"Branch {branch} exists but has no active worktree.\n"
         f"Recreate it with: git worktree add {recreated} {branch}"
@@ -290,16 +375,14 @@ def cmd_close(args: argparse.Namespace) -> int:
     cwd = Path.cwd()
     root = repo_root(cwd)
     settings = load_settings(root)
-    if settings.layout != "single":
-        raise TaskError(f"layout '{settings.layout}' is not supported yet")
     base = settings.base_branch
-    task_id = args.id.lstrip("#")
-    branch = f"{BRANCH_PREFIX}{task_id}"
+    task_id = args.id.strip().strip("'\"").strip("[]")
+    clean_id = task_id.lstrip("#")
+    branch = f"{BRANCH_PREFIX}{clean_id}"
 
     if not branch_exists(branch, cwd=root):
         raise TaskError(f"Task [{task_id}] is not claimed (branch {branch} does not exist).")
 
-    # Locate worktree
     wt_path = None
     for t in worktree_list(root):
         if t["branch"] == branch:
@@ -309,7 +392,6 @@ def cmd_close(args: argparse.Namespace) -> int:
     if not wt_path or not wt_path.is_dir():
         raise TaskError(f"Worktree for [{task_id}] not found. Run adopt first.")
 
-    # Guard against uncommitted work in worktree
     dirt = content_dirt(wt_path, worktree_root=settings.worktree_root)
     if dirt:
         raise TaskError(
@@ -317,45 +399,18 @@ def cmd_close(args: argparse.Namespace) -> int:
             "Commit all changes inside the worktree before running close."
         )
 
-    bpath_rel = settings.backlog_file.relative_to(root)
-    wt_bpath = wt_path / bpath_rel
+    wt_settings = load_settings(wt_path)
+    wt_layout = get_layout(wt_settings)
 
-    today = datetime.date.today().isoformat()
-    if wt_bpath.is_file():
-        content = wt_bpath.read_text(encoding="utf-8")
-        lines = content.splitlines()
-        span = find_task_span(lines, task_id)
-        if span:
-            start, end = span
-            block = lines[start:end]
-            # Update status and outcome
-            for idx, bl in enumerate(block):
-                if "**Status**:" in bl:
-                    block[idx] = re.sub(r"`In Progress`|`Open`", "`Closed`", bl)
-                    if "**Resolved**:" not in block[idx]:
-                        block[idx] += f" | **Resolved**: {today}"
-                if "#### Outcome" in bl and idx + 1 < len(block):
-                    block[idx + 1] = f"- {args.outcome.strip()} ({today})"
+    def do_close():
+        return wt_layout.close(task_id, "Closed", args.outcome.strip())
 
-            # Move to Completed section
-            comp_idx = locate_section(lines, r"Completed")
-            if comp_idx is not None:
-                del lines[start:end]
-                # Append-only: find end of Completed section
-                ins = comp_idx + 1
-                while ins < len(lines) and not lines[ins].startswith("## "):
-                    ins += 1
-                lines[ins:ins] = [""] + block
-            else:
-                lines[start:end] = block
-            write_atomic(wt_bpath, "\n".join(lines).rstrip() + "\n")
-            git("add", str(wt_bpath), cwd=wt_path)
-            if staged_differs(wt_path):
-                git("commit", "-m", f"{task_id}: close — {args.outcome.strip()}", "--no-verify", cwd=wt_path)
+    summary = f"chore(backlog): close [{task_id}]"[:72]
+    safe_commit(wt_path, summary, wt_layout.paths_for(task_id), do_close)
 
     # Sync base branch into worktree
     merged = subprocess.run(
-        ["git", "merge", base, "-m", f"{task_id}: sync with {base}"],
+        ["git", "merge", base, "-m", f"{clean_id}: sync with {base}"],
         cwd=str(wt_path),
         capture_output=True,
         text=True,
@@ -394,8 +449,9 @@ def cmd_abandon(args: argparse.Namespace) -> int:
     cwd = Path.cwd()
     root = repo_root(cwd)
     settings = load_settings(root)
-    task_id = args.id.lstrip("#")
-    branch = f"{BRANCH_PREFIX}{task_id}"
+    task_id = args.id.strip().strip("'\"").strip("[]")
+    clean_id = task_id.lstrip("#")
+    branch = f"{BRANCH_PREFIX}{clean_id}"
 
     if not branch_exists(branch, cwd=root):
         raise TaskError(f"Task [{task_id}] is not claimed.")
