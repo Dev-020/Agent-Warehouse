@@ -111,11 +111,13 @@ Every implementation plan must specify how correctness will be validated before 
   - [ ] Test case 3: Regression defense.
 
 ### 6.2. Manual Verification & Live Gates
-- Steps to manually verify in the runtime environment:
-  1. [Step 1: Setup test environment or start services]
-  2. [Step 2: Trigger action via CLI, UI, or API]
-  3. [Step 3: Inspect output, logs, or database state]
-  4. [Step 4: Confirm expected result]
+Live checks the user runs against the real application, after the merge, one at a time. Each is
+written from [[live-check]] when its phase is briefed. Leave out phases that change nothing a person
+can see or can't be run live.
+
+| After phase | Live check or gate | What it covers | Next phase waits? |
+|---|---|---|---|
+| [Phase] | [Live check / Gate N] | [the behaviour, plan criteria or risks it checks in the real environment] | [Yes: [phase] / No] |
 
 ---
 
@@ -134,6 +136,10 @@ If the change fails during or after deployment:
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- §6.2 is a table of live checks and gates: the phase each follows, what it covers, and whether the
+  next phase waits on it. Each check is written from [[live-check]]; phases that can't be run live, or
+  change nothing a person can see, are left out. Replaces the four generic steps.
 
 ### [0.1.0] - 2026-09-15
 #### Added

@@ -14,7 +14,7 @@ settings:
   session_folder:
     description: "Folder where session logs are written"
     default: "AI/session"
-requires: [protocol/session-log@0.2, protocol/working-memory@0.2, protocol/worktree-claims@0.1, protocol/phase-staffing@0.2, template/plan-document@0.1, template/implementation-brief@0.2, template/probe-brief@0.1, template/review-request@0.1, template/active-context@0.1, architecture/codebuff-orchestration@0.1]
+requires: [protocol/session-log@0.2, protocol/working-memory@0.2, protocol/worktree-claims@0.1, protocol/phase-staffing@0.2, template/plan-document@0.1, template/implementation-brief@0.2, template/probe-brief@0.1, template/review-request@0.1, template/live-check@0.1, template/active-context@0.1, architecture/codebuff-orchestration@0.1]
 replaces: null
 ---
 
@@ -55,6 +55,7 @@ Reviewers always run on the strongest frontier reasoning model. Implementer mode
 | Research and probe notes | `{{memory_folder}}/notes/NN_<topic>.md` | Orchestrator, from its own research or a probe's report | Ground truth the plan relies on |
 | Plan | `{{memory_folder}}/PLAN_<slug>.md`, from [[plan-document]] | Orchestrator | The approved spec, split into phases |
 | Brief, one per phase | `{{memory_folder}}/BRIEF_<id>_<phase>.md`, from [[implementation-brief]] | Orchestrator | What the phase's implementers need, with staffing and decisions settled; its "How this round runs" section when another engine does part of the phase |
+| Live check, for the phases that have one | A section at the end of the brief, or `{{memory_folder}}/LIVE_CHECK_<id>_<phase>.md` (`…_gate<N>.md` for a gate), from [[live-check]] | Orchestrator; the user fills in the results | Shows the merged phase works in the real application; a gate holds the next phase until it passes |
 | Worktree and branch | Per [[worktree-claims]] | Orchestrator | Isolates the phase until it merges |
 | Step commits | The phase branch | Implementers | The checkpoints |
 | Review probes | The Orchestrator's scratchpad, `rv_<phase>/run_all.py` | Reviewer | Makes each finding reproducible and validates the fix |
@@ -74,6 +75,7 @@ Reviewers always run on the strongest frontier reasoning model. Implementer mode
 2. **Design review** by a fresh reviewer (Variant A in [[review-request]]). Revise, then run **one confirmation review** of the revision.
 3. **The user settles every open question.** Each becomes a settled decision: "don't reopen; if it looks wrong during implementation, stop and report".
 4. **Cut it into phases, each sized for one implementer session.** Split a phase into `a`/`b` rather than let it grow unbounded. Give each phase a gate: named tests plus a green suite.
+   - Where a live run is possible and worth it, mark which phases get a **live check** after their merge, and which of those are **live gates** that the next phase waits on (plan §6.2). Not every phase needs one: some change nothing a person can see, and some can't be run live.
 5. **The user approves** the plan.
 
 ## Stage 2 — The phase loop
@@ -83,7 +85,7 @@ Repeat for each phase:
 ```
 re-read → staff phase → brief → worktree → [ implement step → verify checkpoint ] × N
   → review with probes → triage → fix step → re-run probes
-  → full suite once → merge → hand-over → compact if heavy
+  → full suite once → merge → [live check] → hand-over → compact if heavy
 ```
 
 1. **Re-read** the active-context router, this item's active-context file, the latest session log, and the plan section for this phase. After compaction, nothing else from before it is assumed.
@@ -101,6 +103,7 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 8. **Fix step.** Confirmed by **re-running the probes**, not a second full review: passing probes demonstrate the defect is fixed. Add a second review pass only if fixes rework complex state machines or a finding cannot be reduced to a probe script.
 9. **Run the full test suite once**, at the end of the last step. Run a second time only if the first run fails.
 10. **Merge** into the integration branch with `--no-ff`. Remove worktree and branch.
+    - **Live check, if the plan or brief has one for this phase** ([[live-check]]). The user runs it from the primary tree, one check at a time. Check the results against the raw evidence before calling it passed, triage what it found per [[issue-triage]], and record its re-run triggers. A failure gets a fix step and a rerun from the first step. If it is a live gate, the next phase doesn't start until it passes.
 11. **Write the hand-over.** Update:
     - Plan build-order table (done, merge commit, suite count).
     - Active context: empty the item's file per [[working-memory]] ("Keeping it small"), so each line goes to the session log, the plan, [[issue-triage]] or the project's instruction file, or stays because it is still current. Then update the item's row in the router.
@@ -109,7 +112,7 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 
 ## Stage 3 — Close-out
 
-1. **Live gates**, one at a time, from the primary tree against real tools and environments.
+1. **The close-out live check**, if the plan has one, from the primary tree against real tools and environments, per [[live-check]] like the ones in Stage 2.
 2. Archive the plan and close the backlog item.
 
 ## Rules
@@ -148,6 +151,15 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 ## Changelog
 
 ### [Unreleased]
+#### Added
+- Live checks between phases. Stage 1 step 4: the plan marks which phases get a live check after their
+  merge and which are live gates the next phase waits on; not every phase needs one. Stage 2 step 10:
+  the optional live check after the merge, checked against raw evidence, triaged, rerun after a fix,
+  and holding the next phase when it is a gate. New Artifacts row for the live check.
+- Requires `template/live-check@0.1`.
+
+#### Changed
+- Stage 3 step 1 is the close-out live check, if the plan has one, from [[live-check]].
 
 ### [0.3.1] - 2026-10-17
 #### Fixed
