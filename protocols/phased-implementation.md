@@ -14,13 +14,15 @@ settings:
   session_folder:
     description: "Folder where session logs are written"
     default: "AI/session"
-requires: [protocol/session-log@0.2, protocol/working-memory@0.2, protocol/worktree-claims@0.1, protocol/phase-staffing@0.1, template/plan-document@0.1, template/implementation-brief@0.1, template/review-request@0.1, template/active-context@0.1, architecture/codebuff-orchestration@0.1]
+requires: [protocol/session-log@0.2, protocol/working-memory@0.2, protocol/worktree-claims@0.1, protocol/phase-staffing@0.1, template/plan-document@0.1, template/implementation-brief@0.1, template/probe-brief@0.1, template/review-request@0.1, template/active-context@0.1, architecture/codebuff-orchestration@0.1]
 replaces: null
 ---
 
 # Phased Implementation Protocol
 
 How one coordinating agent (the **Orchestrator**) delivers a large, design-heavy change across many sessions' worth of work without its own context filling up. The Orchestrator plans and decides; subagents implement and review; git commits are the checkpoints; a session log carries state across each phase boundary and context compaction.
+
+**Terms.** A **brief** is a task given to an agent: a phase brief, a probe brief, or a review request. A **hand-over** is state passed between sessions: the session log and the active context. Keep the two words apart; neither is called a "handoff".
 
 It is the operating procedure for Tier 3 of [[codebuff-orchestration]] (the context firewall), extended from exploration to implementation and review: each implementer and reviewer starts with bounded scope, does one job, and returns only a report. The context-hygiene practices of that item's §5 (short-lived agents, git checkpoints, targeted tests, compaction at milestones) are operationalized into concrete steps.
 
@@ -40,8 +42,8 @@ Don't use it for a change one session can finish. Tier 1 (solo) or Tier 2 (autho
 |---|---|---|---|
 | **User** | The human | Every open decision in the plan; approval of the plan; deferring a review finding; compacting the Orchestrator's context (e.g. `/compact`) | — |
 | **Orchestrator** | One long-lived top-level session | The plan, briefs, staffing decisions, checkpoint verification, triage, merges, tracking files, and session logs | Reads implementer or reviewer transcripts; writes feature code itself |
-| **Implementer** | An implementer subagent (continued or fresh per [[phase-staffing]]) | Code, targeted tests, one commit per checkpoint step, a concise report citing raw files | Edits tracking files; runs full test suite before phase's final step; reopens settled decisions |
-| **Reviewer** | A fresh subagent per review (always frontier model) | One review: findings with severity, each backed by an executable probe script | Fixes the code it reviews |
+| **Implementer** | An implementer subagent (continued or fresh per [[phase-staffing]]), on this engine or another | Code, targeted tests, one commit per checkpoint step, a concise report citing raw files | Edits tracking files; runs full test suite before phase's final step; reopens settled decisions |
+| **Reviewer** | A fresh subagent per review (always frontier model), on whichever side [[phase-staffing]] assigns | One review: findings with severity, each backed by an executable probe script | Fixes the code it reviews |
 
 Reviewers always run on the strongest frontier reasoning model. Implementer models are selected per phase according to [[phase-staffing]].
 
@@ -49,9 +51,10 @@ Reviewers always run on the strongest frontier reasoning model. Implementer mode
 
 | Artifact | Where (default) | Written by | Purpose |
 |---|---|---|---|
-| Research and probe notes | `{{memory_folder}}/notes/NN_<topic>.md` | Orchestrator or a probe subagent | Ground truth the plan relies on |
+| Probe brief | `{{memory_folder}}/BRIEF_<id>_<phase>_probe.md`, from [[probe-brief]] | Orchestrator | What a probe agent measures, with no product code and no reviewer |
+| Research and probe notes | `{{memory_folder}}/notes/NN_<topic>.md` | Orchestrator, from its own research or a probe's report | Ground truth the plan relies on |
 | Plan | `{{memory_folder}}/PLAN_<slug>.md`, from [[plan-document]] | Orchestrator | The approved spec, split into phases |
-| Brief, one per phase | `{{memory_folder}}/HANDOFF_<id>_<phase>.md`, from [[implementation-brief]] | Orchestrator | What the phase's implementers need, with staffing and decisions settled |
+| Brief, one per phase | `{{memory_folder}}/BRIEF_<id>_<phase>.md`, from [[implementation-brief]] | Orchestrator | What the phase's implementers need, with staffing and decisions settled; its "How this round runs" section when another engine does part of the phase |
 | Worktree and branch | Per [[worktree-claims]] | Orchestrator | Isolates the phase until it merges |
 | Step commits | The phase branch | Implementers | The checkpoints |
 | Review probes | The Orchestrator's scratchpad, `rv_<phase>/run_all.py` | Reviewer | Makes each finding reproducible and validates the fix |
@@ -61,7 +64,7 @@ Reviewers always run on the strongest frontier reasoning model. Implementer mode
 ## Stage 0 — Ground truth before design
 
 1. **Research** how others solved the problem, if it is new to the project. Write it as a note.
-2. **Probe what the design assumes.** Test every mechanism the design depends on against real tools, CLIs, or APIs, and record each as confirmed or refuted in a note. Fold results into the plan before building.
+2. **Probe what the design assumes.** Test every mechanism the design depends on against real tools, CLIs, or APIs, and record each as confirmed or refuted in a note. When a probe agent does the measuring, give it a brief from [[probe-brief]] and check its numbers against the raw files before writing the note. Fold results into the plan before building.
 
 *Why: a plan built on an unverified tool behavior fails in the phase that first depends on it, after preceding work is already built.*
 
@@ -87,6 +90,7 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 2. **Staff the phase and write the brief.**
    - Decide staffing shape (size, coupling, model) per [[phase-staffing]].
    - Write the brief from [[implementation-brief]], opening with the staffing row and documenting settled **Orchestrator decisions**. Split into checkpoint steps. Commit the brief.
+   - If another engine does part of the phase, add the brief's "How this round runs" section and choose the split per [[phase-staffing]] ("Handing work to another engine"). The receiver's first step is its capability check.
 3. **Create the phase worktree and branch** from the integration branch, per [[worktree-claims]]. The Orchestrator, not the worker, marks the item In Progress and owns tracking files (replacing §4.1 step 4 and §4.5 step 2 of that protocol).
 4. **Implement one step at a time.**
    - For tightly coupled steps, use one continued implementer subagent across steps; for large loosely coupled steps, spawn a fresh agent per step (per [[phase-staffing]]).
@@ -124,6 +128,7 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 | Situation | Action |
 |---|---|
 | Subagent hits a usage limit mid-task | Resume the same agent (send message) after reset; work so far is preserved. |
+| The coordinating side runs short of usage for a phase | With the user's agreement, hand the phase or its remaining steps to another engine per [[phase-staffing]]. If the brief was already handed out, put the "How this round runs" section in its own file pointing at the brief. |
 | User is away and cannot approve peer-session actions | Use subagents rather than top-level peer sessions. |
 | Phase turns out too large for one session | Split it (`a`/`b`) at the next checkpoint and update the plan. |
 | Reviewer's suggested fix breaks another probe | Choose a different fix that passes all probes; document rationale in session log. |
@@ -143,6 +148,16 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 ## Changelog
 
 ### [Unreleased]
+#### Added
+- Terms: a *brief* is a task given to an agent; a *hand-over* is state passed between sessions.
+- A probe-brief artifact (`template/probe-brief`), used in Stage 0 when a probe agent measures.
+- Stage 2 step 2 and a fallback cover work another engine does, through the brief's "How this round
+  runs" section and `protocol/phase-staffing`'s complete or mixed split.
+- Requires `template/probe-brief@0.1`.
+
+#### Changed
+- Briefs are saved as `BRIEF_<id>_<phase>.md` (probe briefs `BRIEF_<id>_<phase>_probe.md`) instead
+  of `HANDOFF_<id>_<phase>.md`. Briefs already saved under the old name need no change.
 
 ### [0.2.0] - 2026-10-12
 #### Changed

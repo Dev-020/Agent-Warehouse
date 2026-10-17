@@ -73,7 +73,7 @@ graph TD
     T2["Tier 2: Concurrency & Swarms<br/>(Multi-Agent Claims & Swarm Governance)"]
     T3["Tier 3: Domain Capabilities<br/>(Specialized Toolchains & Compilers)"]
 
-    T0 -->|Project adds milestones & handoffs| T1
+    T0 -->|Project adds milestones & hand-overs| T1
     T1 -->|Project scales to parallel agents| T2
     T0 -->|Project requires domain tools| T3
 ```
@@ -88,13 +88,13 @@ graph TD
   2. `protocol/working-memory`: Context management methodology (disk is memory, context window is RAM).
 
 #### Tier 1: Operational Workflow (Structured Projects)
-* **Goal:** Establish structured milestone tracking, clean git history, and persistent handoffs across sessions.
-* **When to adopt:** When a project expands beyond quick prototypes to multi-session features, release cycles, or team handoffs.
+* **Goal:** Establish structured milestone tracking, clean git history, and persistent hand-overs across sessions.
+* **When to adopt:** When a project expands beyond quick prototypes to multi-session features, release cycles, or team hand-overs.
 * **Items:**
   - *All of Tier 0*, plus:
   3. `convention/commits`: Conventional atomic commit messages.
   4. `convention/backlog`: Structured task tracking and acceptance criteria.
-  5. `protocol/session-log`: Session handoff notes and decision records.
+  5. `protocol/session-log`: Session hand-over notes and decision records.
   6. `protocol/safe-write`: Guardrails for modifying live stores/databases.
 
 #### Tier 2: Concurrency & Scaling (Multi-Agent Swarms)

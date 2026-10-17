@@ -83,22 +83,31 @@ Plans should present a staffing table across phases, and every brief should open
 
 When requesting user approval, state the three answers and rationale concisely. The user makes the final determination and may route specific phases to different models or agent harnesses.
 
-## Handing a phase to a second pipeline
+## Handing work to another engine
 
-A phase can go to another tool's agents (a second pipeline) when the coordinating side is short of usage, or to build two loose phases at once.
+A phase, part of a phase, or a probe can go to another engine's agents when the coordinating side is short of usage, when the user chooses it, or to build two loose phases at once.
 
-- **The second pipeline is complete in itself:** its own orchestrator, implementer and reviewer, three separate agents. It builds, reviews and fixes, and reports back only when that is done. A hand-off that returns built but unreviewed pushes the review back onto the coordinating side.
-- **The brief names the three roles and what each never does,** requires a failing probe for every finding, and asks which model each agent ran on.
+**Choose the split, and say who reviews:**
+
+| Split | The other engine runs | The coordinating side keeps | Fits when |
+|---|---|---|---|
+| **Complete pipeline** | Its own orchestrator, implementer and reviewer: it builds, reviews, fixes, and reports only when that is done | Verification and the merge | The coordinating side is short of usage for the whole phase |
+| **Mixed** | Only the implementer (or another single role) | Orchestration, the review and the merge | The other engine builds well, but the review should stay on the strongest model this side has |
+
+- **Every split has a reviewer, and it is never the implementer.** A round that comes back built but unreviewed is reviewed by the coordinating side; plan for that usage when choosing the split.
+- **The brief carries a "How this round runs" section** ([[implementation-brief]]): the reason and the user's agreement, each agent's engine and what it never does, what the sending engine used for this task, the environment, the receiver's Step 0 capability check, what comes back, and a start prompt. A failing probe backs every finding, whichever side reviews.
+- **The sender describes itself; the receiver compares.** The brief states what the sending engine actually used and observed for this task, with engine, model and date. It doesn't rely on a skill for the receiving engine, which may not exist and goes stale as engines update. The receiver's first step checks each capability against its own engine and stops before building if something essential is missing.
+- **Name the environment.** OS, shell, and the versions of the tools the steps call. Some dependencies are invisible from inside an engine, e.g. a shell whose `PATH` lacks a command a test runs.
 - **The two sides never share a file in flight.** Each brief lists the other side's files as off limits.
-- **The coordinating Orchestrator still verifies** the report against the commits and re-runs the probes before merging. Verifying costs far less than reviewing.
-- **Files in the repository are the channel** between the two sides when there is no direct one: a brief going out, a report coming back, the user relaying a one-line prompt.
-- **Ask the user about usage** before starting a round on either side.
+- **The coordinating Orchestrator still verifies** the report against the commits and re-runs the targeted tests and the probes before merging. Verifying costs far less than reviewing.
+- **Files in the repository are the channel** between the two sides when there is no direct one: a brief going out, a report coming back, the user relaying the start prompt and a one-line prompt each way.
+- **Ask the user about usage** before starting a round on either side, and get their agreement to each model change.
 
 ## Reports are checked against their raw evidence
 
 Delegating work across multiple agents or external tools is only reliable if reports are objectively verifiable:
 
-1. **Every number, measurement, and quote in a report must name the raw file it originates from.** Require this in the brief. If something was not measured, the report must explicitly state "not tested".
+1. **Every number, measurement, and quote in a report must name the raw file it originates from.** Require this in the brief. If something was not measured, the report must explicitly state "not tested". A probe's report also marks each result CONFIRMED or INFERRED ([[probe-brief]]). Every report names the model each agent ran on.
 2. **The coordinator must verify raw data before merging or building on a result.**
    - For code commits: verify the commit hash, clean tree, files touched, and passing changed tests.
    - For probes and benchmarks: recompute a sample of numbers directly from the raw output files, and inspect the raw execution stream where assertions about tool behavior are made.
@@ -125,6 +134,16 @@ A report may quote what a model claimed happened rather than what the execution 
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- "Handing a phase to a second pipeline" is now "Handing work to another engine". Besides a complete
+  second pipeline it allows a mixed split, where the other engine runs only the implementer and the
+  coordinating side keeps the orchestration and the review (Shadow Cursor #081 A2a). Every split has a
+  reviewer that isn't the implementer.
+- The brief for such a round carries the "How this round runs" section of `template/implementation-brief`:
+  the sending engine describes what it used, names the environment, and the receiver checks its own
+  capabilities before building.
+- Reports name the model each agent ran on; probe reports mark results CONFIRMED or INFERRED
+  (`template/probe-brief`).
 
 ### [0.1.1] - 2026-10-02
 #### Added

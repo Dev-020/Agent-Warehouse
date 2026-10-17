@@ -21,7 +21,7 @@ A structured workflow for executing complex tasks — deep research, multi-file 
 
 Related protocols:
 - Operating constraints and working posture: [[agent-protocol]]
-- Session logs and cross-session handoffs: [[session-log]]
+- Session logs and cross-session hand-overs: [[session-log]]
 - Verification discipline and citations: [[research-discipline]]
 
 ---
@@ -34,7 +34,7 @@ For non-trivial tasks, never attempt to hold raw source files, dependency graphs
 
 > **Read & Research → Write notes to disk (`{{memory_folder}}/`) → Clear RAM → Synthesize plan from notes → Execute & Verify**
 
-Offloading intermediate findings to markdown notes on disk prevents hallucinations caused by context saturation and generates persistent, auditable artifacts that survive across agent turns and multi-agent handoffs.
+Offloading intermediate findings to markdown notes on disk prevents hallucinations caused by context saturation and generates persistent, auditable artifacts that survive across agent turns and multi-agent hand-overs.
 
 ---
 
@@ -45,7 +45,7 @@ Use this workflow whenever a task meets **two or more** of the following conditi
 - **Large source material:** Spans multiple files, extensive documentation, large datasets, or unfamiliar third-party libraries.
 - **Multi-phase execution:** Requires distinct stages (research → architecture plan → code modification → test verification).
 - **High accuracy requirement:** Involves production code, delicate algorithms (e.g. geometric projections, financial math, state machines), or architectural invariants.
-- **Multi-session continuity:** Expected to span multiple turns, conversation restarts, or handoffs between different agents.
+- **Multi-session continuity:** Expected to span multiple turns, conversation restarts, or hand-overs between different agents.
 
 Skip this procedure for trivial, single-step operations (e.g. fixing a typo, updating a single comment, formatting a table).
 
@@ -187,6 +187,9 @@ Skipping intermediate notes files and jumping straight to implementation is the 
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- Wording: "handoff" is now "hand-over", matching `protocol/phased-implementation`'s terms. No rule
+  changed.
 
 ### [0.2.0] - 2026-10-12
 #### Changed
