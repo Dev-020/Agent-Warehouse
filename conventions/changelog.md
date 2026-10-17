@@ -1,6 +1,6 @@
 ---
 id: convention/changelog
-version: 0.1.1
+version: 0.1.2
 status: draft
 summary: Keep a Changelog rules for warehouse items — location, headings, categories and breaking changes.
 applies-to: [warehouse]
@@ -135,6 +135,8 @@ Bottom of `protocols/session-log.md`:
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.2] - 2026-10-17
 #### Changed
 - The example entry says "hand-overs" instead of "handoffs", matching
   `protocol/phased-implementation`'s terms. No rule changed.
