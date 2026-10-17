@@ -563,3 +563,60 @@ def test_claim_hint_quotes_task_id(tmp_path: Path, run_cli):
     assert "python task.py close '#001' --outcome 'Summary'" in res.output
 
 
+def test_tool_commits_do_not_have_co_authored_trailer(tmp_path: Path, run_cli):
+    """F14: tool commits must not include a hardcoded Co-Authored-By trailer."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_f14")
+    run_cli(repo, "open", "Task F14")
+    msg = subprocess.run(
+        ["git", "log", "-1", "--format=%B"], cwd=str(repo), capture_output=True, text=True, check=True
+    ).stdout
+    assert "Gemini" not in msg
+    assert "Antigravity" not in msg
+
+
+def test_folder_item_restore_on_hook_failure(tmp_path: Path, run_cli):
+    """F3: rollback folder move and restore files intact when close commit fails due to hook."""
+    repo = tmp_path / "repo_f3"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=str(repo), check=True)
+    (repo / ".warehouse.yml").write_text("settings:\n  backlog_layout: folders\n", encoding="utf-8")
+    b = repo / "BACKLOG"
+    (b / "open").mkdir(parents=True)
+    (b / "closed").mkdir(parents=True)
+    (b / "00_BACKLOG.md").write_text("# Backlog\n\n- **Entry style:** full\n", encoding="utf-8")
+    (b / "open" / ".gitkeep").write_text("", encoding="utf-8")
+    (b / "closed" / ".gitkeep").write_text("", encoding="utf-8")
+    (repo / "README.md").write_text("readme\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=str(repo), check=True)
+
+    run_cli(repo, "open", "Alpha task")
+    o = repo / "BACKLOG" / "open"
+    f = next(o.glob("001-*.md"))
+    folder = o / f.stem
+    folder.mkdir()
+    f.rename(folder / f.name)
+    (folder / "evidence.txt").write_text("precious evidence\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-qm", "item becomes a folder"], cwd=str(repo), check=True)
+
+    run_cli(repo, "claim", "#001")
+    wt_dir = (tmp_path / "worktrees" / "001").resolve()
+    wfolder = wt_dir / "BACKLOG" / "open" / folder.name
+    before_bytes = (wfolder / f.name).read_bytes()
+
+    _install_failing_hook(repo)
+    res = run_cli(repo, "close", "#001", "--outcome", "Done")
+    assert res.exit_code != 0
+
+    assert (wfolder / "evidence.txt").is_file()
+    assert (wfolder / "evidence.txt").read_text(encoding="utf-8") == "precious evidence\n"
+    assert (wfolder / f.name).is_file()
+    assert (wfolder / f.name).read_bytes() == before_bytes
+    assert not (wt_dir / "BACKLOG" / "closed" / folder.name).exists()
+    st = subprocess.run(["git", "status", "--porcelain"], cwd=str(wt_dir), capture_output=True, text=True).stdout
+    assert st.strip() == ""
+
+

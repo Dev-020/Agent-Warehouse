@@ -325,19 +325,19 @@ class BaseLayout(ABC):
         pass
 
     @abstractmethod
-    def add(self, item: Item, style: str = "full") -> list[Path]:
+    def add(self, item: Item, style: str = "full") -> tuple[list[Path], list[tuple[Path, Path]]]:
         pass
 
     @abstractmethod
-    def set_status(self, task_id: str, status: str) -> list[Path]:
+    def set_status(self, task_id: str, status: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         pass
 
     @abstractmethod
-    def close(self, task_id: str, status: str, outcome: str) -> list[Path]:
+    def close(self, task_id: str, status: str, outcome: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         pass
 
     @abstractmethod
-    def append_note(self, task_id: str, text: str) -> list[Path]:
+    def append_note(self, task_id: str, text: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         pass
 
     @abstractmethod
@@ -597,14 +597,14 @@ class SingleFileLayout(BaseLayout):
                 return it
         return None
 
-    def add(self, item: Item, style: str = "full") -> list[Path]:
+    def add(self, item: Item, style: str = "full") -> tuple[list[Path], list[tuple[Path, Path]]]:
         lines, le, bom, sections = self._load()
         entry_lines = render_entry_lines(item, style=style, h_prefix="###")
         file_insert_entry_by_priority(lines, sections, entry_lines)
         write_text_preserving(self.file, "\n".join(lines), le, bom)
-        return [self.file]
+        return [self.file], []
 
-    def set_status(self, task_id: str, status: str) -> list[Path]:
+    def set_status(self, task_id: str, status: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         lines, le, bom, sections = self._load()
         entry_lines, _ = file_extract_entry(lines, task_id)
         today = datetime.date.today().isoformat()
@@ -620,9 +620,9 @@ class SingleFileLayout(BaseLayout):
             target_sec = "backlog"
         file_insert_entry_at_bottom(lines, sections, entry_lines, target_sec)
         write_text_preserving(self.file, "\n".join(lines), le, bom)
-        return [self.file]
+        return [self.file], []
 
-    def close(self, task_id: str, status: str, outcome: str) -> list[Path]:
+    def close(self, task_id: str, status: str, outcome: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         lines, le, bom, sections = self._load()
         entry_lines, _ = file_extract_entry(lines, task_id)
         today = datetime.date.today().isoformat()
@@ -631,9 +631,9 @@ class SingleFileLayout(BaseLayout):
         sections = find_sections(lines)
         file_insert_entry_at_bottom(lines, sections, entry_lines, "completed")
         write_text_preserving(self.file, "\n".join(lines), le, bom)
-        return [self.file]
+        return [self.file], []
 
-    def append_note(self, task_id: str, text: str) -> list[Path]:
+    def append_note(self, task_id: str, text: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         lines, le, bom, _ = self._load()
         res = file_find_entry(lines, task_id, path=self.file, line_ending=le)
         if not res:
@@ -644,7 +644,7 @@ class SingleFileLayout(BaseLayout):
         entry_append_note(entry_lines, text, today, h_prefix="####")
         lines[start:end] = entry_lines
         write_text_preserving(self.file, "\n".join(lines), le, bom)
-        return [self.file]
+        return [self.file], []
 
 
 # ---------------------------------------------------------------------------
@@ -708,14 +708,14 @@ class SplitFilesLayout(BaseLayout):
                 return it
         return None
 
-    def add(self, item: Item, style: str = "full") -> list[Path]:
+    def add(self, item: Item, style: str = "full") -> tuple[list[Path], list[tuple[Path, Path]]]:
         lines, le, bom, sections = self._load_open()
         entry_lines = render_entry_lines(item, style=style, h_prefix="###")
         file_insert_entry_by_priority(lines, sections, entry_lines)
         write_text_preserving(self.open_file, "\n".join(lines), le, bom)
-        return [self.open_file]
+        return [self.open_file], []
 
-    def set_status(self, task_id: str, status: str) -> list[Path]:
+    def set_status(self, task_id: str, status: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         target = self.find(task_id)
         if not target or not target.span or not target.path:
             raise TaskError(f"Task [{task_id}] not found in backlog")
@@ -731,7 +731,7 @@ class SplitFilesLayout(BaseLayout):
             target_sec = "in progress" if status == "In Progress" else "backlog"
             file_insert_entry_at_bottom(lines, sections, entry_lines, target_sec)
             write_text_preserving(self.open_file, "\n".join(lines), le, bom)
-            return [self.open_file]
+            return [self.open_file], []
 
         if target.path == self.open_file:
             open_lines, o_le, o_bom, _ = self._load_open()
@@ -743,7 +743,7 @@ class SplitFilesLayout(BaseLayout):
             target_sec = "completed" if status == "Closed" else "icebox"
             file_insert_entry_at_bottom(closed_lines, sections, entry_lines, target_sec)
             write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
-            return [self.open_file, self.closed_file]
+            return [self.open_file, self.closed_file], []
         else:
             closed_lines, c_le, c_bom, sections = self._load_closed()
             entry_lines, _ = file_extract_entry(closed_lines, task_id)
@@ -752,9 +752,9 @@ class SplitFilesLayout(BaseLayout):
             target_sec = "completed" if status == "Closed" else "icebox"
             file_insert_entry_at_bottom(closed_lines, sections, entry_lines, target_sec)
             write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
-            return [self.closed_file]
+            return [self.closed_file], []
 
-    def close(self, task_id: str, status: str, outcome: str) -> list[Path]:
+    def close(self, task_id: str, status: str, outcome: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         target = self.find(task_id)
         if not target or not target.span or not target.path:
             raise TaskError(f"Task [{task_id}] not found in backlog")
@@ -770,7 +770,7 @@ class SplitFilesLayout(BaseLayout):
             closed_lines, c_le, c_bom, sections = self._load_closed()
             file_insert_entry_at_bottom(closed_lines, sections, entry_lines, "completed")
             write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
-            return [self.open_file, self.closed_file]
+            return [self.open_file, self.closed_file], []
         else:
             closed_lines, c_le, c_bom, sections = self._load_closed()
             entry_lines, _ = file_extract_entry(closed_lines, task_id)
@@ -779,9 +779,9 @@ class SplitFilesLayout(BaseLayout):
             sections = find_sections(closed_lines)
             file_insert_entry_at_bottom(closed_lines, sections, entry_lines, "completed")
             write_text_preserving(self.closed_file, "\n".join(closed_lines), c_le, c_bom)
-            return [self.closed_file]
+            return [self.closed_file], []
 
-    def append_note(self, task_id: str, text: str) -> list[Path]:
+    def append_note(self, task_id: str, text: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         target = self.find(task_id)
         if not target or not target.span or not target.path:
             raise TaskError(f"Task [{task_id}] not found in backlog")
@@ -798,7 +798,7 @@ class SplitFilesLayout(BaseLayout):
         entry_append_note(entry_lines, text, today, h_prefix="####")
         lines[start:end] = entry_lines
         write_text_preserving(target_file, "\n".join(lines), le, bom)
-        return [target_file]
+        return [target_file], []
 
 
 # ---------------------------------------------------------------------------
@@ -965,9 +965,9 @@ class ItemFoldersLayout(BaseLayout):
 
         content = "\n".join(fm_lines + body_lines) + "\n"
         write_atomic(target_path, content)
-        return [target_path]
+        return [target_path], []
 
-    def set_status(self, task_id: str, status: str) -> list[Path]:
+    def set_status(self, task_id: str, status: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         target = self.find(task_id)
         if not target or not target.path:
             raise TaskError(f"Task [{task_id}] not found in backlog")
@@ -988,16 +988,17 @@ class ItemFoldersLayout(BaseLayout):
             if file_path.parent == self.open_dir:
                 dest = self.closed_dir / file_path.name
                 shutil.move(str(file_path), str(dest))
-                return [file_path, dest]
+                return [dest], [(file_path, dest)]
             else:
                 folder = file_path.parent
                 dest = self.closed_dir / folder.name
                 shutil.move(str(folder), str(dest))
-                return [folder, dest]
+                main_file = dest / file_path.name
+                return [main_file], [(folder, dest)]
 
-        return [file_path]
+        return [file_path], []
 
-    def close(self, task_id: str, status: str, outcome: str) -> list[Path]:
+    def close(self, task_id: str, status: str, outcome: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         target = self.find(task_id)
         if not target or not target.path:
             raise TaskError(f"Task [{task_id}] not found in backlog")
@@ -1038,14 +1039,15 @@ class ItemFoldersLayout(BaseLayout):
         if file_path.parent == self.open_dir:
             dest = self.closed_dir / file_path.name
             shutil.move(str(file_path), str(dest))
-            return [file_path, dest]
+            return [dest], [(file_path, dest)]
         else:
             folder = file_path.parent
             dest = self.closed_dir / folder.name
             shutil.move(str(folder), str(dest))
-            return [folder, dest]
+            main_file = dest / file_path.name
+            return [main_file], [(folder, dest)]
 
-    def append_note(self, task_id: str, text: str) -> list[Path]:
+    def append_note(self, task_id: str, text: str) -> tuple[list[Path], list[tuple[Path, Path]]]:
         target = self.find(task_id)
         if not target or not target.path:
             raise TaskError(f"Task [{task_id}] not found in backlog")
@@ -1056,7 +1058,7 @@ class ItemFoldersLayout(BaseLayout):
         today = datetime.date.today().isoformat()
         entry_append_note(lines, text, today, h_prefix="##")
         write_text_preserving(file_path, "\n".join(lines), le, bom)
-        return [file_path]
+        return [file_path], []
 
 
 # ---------------------------------------------------------------------------

@@ -159,12 +159,12 @@ def safe_commit(
     root: Path,
     message: str,
     pre_check_paths: list[Path],
-    action_fn: Callable[[], list[Path]],
+    action_fn: Callable[[], list[Path] | tuple[list[Path], list[tuple[Path, Path]]]],
 ) -> None:
     """Safely execute action_fn and commit only the written paths adhering to Decision 17.
 
     Refuses if any path has uncommitted changes.
-    Restores files and deletes newly created files if commit fails.
+    Restores files and moves if commit fails (F3).
     """
     existing_paths = [p for p in pre_check_paths if p.exists()]
     dirt = content_dirt(root, *[str(p) for p in existing_paths])
@@ -173,8 +173,19 @@ def safe_commit(
 
     with Restorable(existing_paths):
         paths_before = set(existing_paths)
-        written_paths = action_fn()
-        created_paths = [p for p in written_paths if p not in paths_before and p.exists()]
+        res = action_fn()
+        if isinstance(res, tuple) and len(res) == 2 and isinstance(res[1], list):
+            written_paths, moves = res
+        else:
+            written_paths, moves = res, []
+
+        created_paths = [
+            p
+            for p in written_paths
+            if p not in paths_before
+            and p.exists()
+            and not any(dest == p or dest in p.parents for _, dest in moves)
+        ]
 
         try:
             rel_paths: list[str] = []
@@ -189,16 +200,31 @@ def safe_commit(
                         rel_paths.append(p.relative_to(root).as_posix())
                     except ValueError:
                         rel_paths.append(str(p))
+            for src, dest in moves:
+                try:
+                    rel_paths.append(src.relative_to(root).as_posix())
+                except ValueError:
+                    rel_paths.append(str(src))
+                try:
+                    rel_paths.append(dest.relative_to(root).as_posix())
+                except ValueError:
+                    rel_paths.append(str(dest))
+
+            rel_paths = list(dict.fromkeys(rel_paths))
 
             git("add", "--", *rel_paths, cwd=root)
-            trailer = "Co-Authored-By: Gemini 3.8 Flash High (Antigravity) <noreply@google.com>"
             summary = message[:72]
-            git("commit", "-m", summary, "-m", trailer, "--", *rel_paths, cwd=root)
+            # F14: no Co-Authored-By trailer in tool commits
+            git("commit", "-m", summary, "--", *rel_paths, cwd=root)
         except Exception as exc:
             if rel_paths:
                 git("reset", "-q", "--", *rel_paths, cwd=root, check=False)
+            # F3: Move each destination back to its source first, then Restorable restores bytes
+            for src, dest in reversed(moves):
+                if dest.exists():
+                    shutil.move(str(dest), str(src))
             for p in created_paths:
-                if p.exists():
+                if p.exists() and not any(src == p or src in p.parents for src, _ in moves):
                     if p.is_dir():
                         shutil.rmtree(p, ignore_errors=True)
                     else:

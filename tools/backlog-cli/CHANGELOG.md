@@ -35,7 +35,9 @@
 - F4: `claim` provisions branches strictly from `<base>` and reads the target item from `<base>` ref without checking out.
 - F5: `claim`, `close`, and `abandon` check at start that `refs/heads/<base>` exists, refusing if missing; `abandon` revision logs execute with `check=True`.
 - F9: `close` refuses before any write unless the primary tree is checked out on the base branch.
+- F14: tool commits carry only the message summary without the `Co-Authored-By` trailer.
 - F15: `claim` completion hint quotes the task ID so shell comment characters (`#`) are preserved.
+- F3: layout methods return written paths and moves; `safe_commit` restores moved destinations back to sources before restoring bytes on commit failure without deleting moved paths.
 
 ### Removed
 - Fallback to `BACKLOG/Open.md` when `BACKLOG.md` is missing (a project sets `backlog_layout`).
