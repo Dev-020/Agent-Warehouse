@@ -190,6 +190,20 @@ def worktree_list(cwd: str | Path | None = None) -> list[dict[str, str]]:
                 "head": entry.get("HEAD", ""),
             }
         )
+
+    if result and (Path(result[0]["path"]) / "objects").is_dir():
+        try:
+            r = repo_root(cwd or Path.cwd())
+            dot_git = r / ".git"
+            if dot_git.is_file():
+                text = dot_git.read_text(encoding="utf-8", errors="replace").strip()
+                if text.startswith("gitdir:"):
+                    target_gitdir = (r / text.split(":", 1)[1].strip()).resolve()
+                    if target_gitdir == Path(result[0]["path"]).resolve():
+                        result[0]["path"] = str(r).replace("\\", "/")
+        except Exception:
+            pass
+
     return result
 
 

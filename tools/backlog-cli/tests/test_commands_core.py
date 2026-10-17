@@ -79,7 +79,7 @@ def test_cmd_open(tmp_path: Path, run_cli, layout: str):
         item_file = repo / "BACKLOG" / "open" / "TASK-1-build-new-feature.md"
         assert item_file.is_file()
         content = item_file.read_text(encoding="utf-8")
-        assert "title: Build new feature" in content
+        assert 'title: "Build new feature"' in content
 
 
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
