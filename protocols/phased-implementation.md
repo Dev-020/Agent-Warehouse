@@ -14,7 +14,7 @@ settings:
   session_folder:
     description: "Folder where session logs are written"
     default: "AI/session"
-requires: [protocol/session-log@0.2, protocol/working-memory@0.2, protocol/worktree-claims@0.1, protocol/phase-staffing@0.2, template/plan-document@0.1, template/implementation-brief@0.2, template/probe-brief@0.1, template/review-request@0.1, template/live-check@0.1, template/active-context@0.1, architecture/codebuff-orchestration@0.1]
+requires: [protocol/session-log@0.2, protocol/working-memory@0.2, protocol/worktree-claims@0.1, protocol/phase-staffing@0.2, template/plan-document@0.2, template/implementation-brief@0.2, template/probe-brief@0.1, template/review-request@0.1, template/live-check@0.1, template/active-context@0.1, architecture/codebuff-orchestration@0.1]
 replaces: null
 ---
 
@@ -151,6 +151,9 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 ## Changelog
 
 ### [Unreleased]
+#### Fixed
+- Requires `template/plan-document@0.2`. 0.4.0 still pinned it at `@0.1`, so a pull kept the old §6.2
+  without the table of live checks and gates.
 
 ### [0.4.0] - 2026-10-17
 #### Added
