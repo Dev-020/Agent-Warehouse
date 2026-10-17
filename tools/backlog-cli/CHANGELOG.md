@@ -30,6 +30,12 @@
 - B1: `close` placed `- **Resolved**:` after any line in the entry starting with `- **` (such as in Why); resolved date now strictly appends to the metadata block directly under the heading.
 - B2: `append_note` placed new notes after the blank line ending Notes; new notes now append immediately following the last note bullet, preserving one blank line before the next heading.
 - B3: `close` in single layout left two blank lines after Outcome; entries and section boundaries are now separated by exactly one blank line.
+- F1: `close` executed from inside a claim worktree refuses cleanly before touching files, directing the user to run from the primary tree.
+- F2: `close` re-run after resolving a sync conflict skips updating the item and creating a duplicate commit when the item is already `Closed`.
+- F4: `claim` provisions branches strictly from `<base>` and reads the target item from `<base>` ref without checking out.
+- F5: `claim`, `close`, and `abandon` check at start that `refs/heads/<base>` exists, refusing if missing; `abandon` revision logs execute with `check=True`.
+- F9: `close` refuses before any write unless the primary tree is checked out on the base branch.
+- F15: `claim` completion hint quotes the task ID so shell comment characters (`#`) are preserved.
 
 ### Removed
 - Fallback to `BACKLOG/Open.md` when `BACKLOG.md` is missing (a project sets `backlog_layout`).

@@ -28,13 +28,131 @@ from backlog_cli.gitops import (
     force_rmtree,
     git,
     git_dir,
+    git_ok,
     repo_root,
     worktree_list,
 )
-from backlog_cli.ids import allocate_id, collect_branch_ids
-from backlog_cli.layouts import PRIORITY_LEVELS, get_layout
+from backlog_cli.ids import allocate_id, collect_branch_ids, id_matches
+from backlog_cli.layouts import PRIORITY_LEVELS, file_find_entry, get_layout, parse_frontmatter
 from backlog_cli.model import Item
 from backlog_cli.settings import load_settings
+
+
+def find_item_on_branch(root: Path, branch: str, task_id: str, settings: Any) -> Item | None:
+    """Read and find an item on a branch ref without checking it out (Decision 18, F4)."""
+    layout_type = settings.layout
+    if layout_type == "single":
+        try:
+            rel = settings.backlog_file.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            rel = settings.backlog_file.name
+        proc = subprocess.run(
+            ["git", "show", f"{branch}:{rel}"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if proc.returncode != 0:
+            return None
+        lines = [l[:-1] if l.endswith("\r") else l for l in proc.stdout.split("\n")]
+        res = file_find_entry(lines, task_id)
+        return res[2] if res else None
+
+    elif layout_type == "split":
+        try:
+            rel_dir = settings.backlog_dir.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            rel_dir = settings.backlog_dir.name
+        proc = subprocess.run(
+            ["git", "show", f"{branch}:{rel_dir}/Open.md"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if proc.returncode == 0:
+            lines = [l[:-1] if l.endswith("\r") else l for l in proc.stdout.split("\n")]
+            res = file_find_entry(lines, task_id)
+            if res:
+                return res[2]
+        proc_cls = subprocess.run(
+            ["git", "show", f"{branch}:{rel_dir}/Closed.md"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if proc_cls.returncode == 0:
+            lines = [l[:-1] if l.endswith("\r") else l for l in proc_cls.stdout.split("\n")]
+            res = file_find_entry(lines, task_id)
+            if res:
+                return res[2]
+        return None
+
+    elif layout_type == "folders":
+        try:
+            rel_dir = settings.backlog_dir.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            rel_dir = settings.backlog_dir.name
+        proc_ls = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", branch, "--", f"{rel_dir}/open", f"{rel_dir}/closed"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if proc_ls.returncode != 0:
+            return None
+        md_paths = [
+            l.strip()
+            for l in proc_ls.stdout.splitlines()
+            if l.strip().endswith(".md") and not l.strip().endswith("00_BACKLOG.md")
+        ]
+        clean_id = task_id.lstrip("#").strip("[]")
+        for md_path in md_paths:
+            proc_show = subprocess.run(
+                ["git", "show", f"{branch}:{md_path}"],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if proc_show.returncode == 0:
+                fields, body, _ = parse_frontmatter(proc_show.stdout)
+                tid = str(fields.get("id", ""))
+                if tid and id_matches(tid, task_id):
+                    return Item(
+                        id=tid,
+                        title=str(fields.get("title", "")),
+                        status=str(fields.get("status", "Open")),
+                        priority=str(fields.get("priority", "P2")),
+                        fields=fields,
+                        body=body,
+                        path=Path(md_path),
+                    )
+                elif not tid:
+                    fname = Path(md_path).name
+                    m = re.match(r"^(\d+|[A-Za-z]+-\d+)(?:-|\.md$|/|$)", fname)
+                    if m:
+                        val = f"#{m.group(1)}" if m.group(1).isdigit() else m.group(1)
+                        if id_matches(val, task_id):
+                            return Item(
+                                id=val,
+                                title=str(fields.get("title", fname)),
+                                status=str(fields.get("status", "Open")),
+                                priority=str(fields.get("priority", "P2")),
+                                fields=fields,
+                                body=body,
+                                path=Path(md_path),
+                            )
+        return None
+
 
 
 def safe_commit(
@@ -347,13 +465,17 @@ def cmd_claim(args: argparse.Namespace) -> int:
     root = repo_root(cwd)
     custom_backlog = getattr(args, "backlog_path", None)
     settings = load_settings(root, backlog_path=custom_backlog)
-    layout = get_layout(settings)
+    base = settings.base_branch
+
+    # F5: check base branch exists at the start
+    if not git_ok("show-ref", "--verify", "--quiet", f"refs/heads/{base}", cwd=root):
+        raise TaskError(f"base branch '{base}' not found; set backlog.baseBranch")
 
     task_id = args.id.strip().strip("'\"").strip("[]")
-    # Decision 18: Refuse before creating branch if not found or not Open
-    item = layout.find(task_id)
+    # F4 / Decision 18: Read item from <base> without checking out
+    item = find_item_on_branch(root, base, task_id, settings)
     if not item:
-        raise TaskError(f"Task [{task_id}] not found in backlog.")
+        raise TaskError(f"Task [{task_id}] not found in backlog on branch '{base}'.")
     if item.status != "Open":
         raise TaskError(f"Task [{task_id}] has status '{item.status}', expected 'Open'.")
 
@@ -371,7 +493,8 @@ def cmd_claim(args: argparse.Namespace) -> int:
         raise TaskError(f"Directory {target_dir} already exists on disk but has no claim branch.")
 
     try:
-        git("worktree", "add", str(target_dir), "-b", branch, cwd=root)
+        # F4: branch from <base>
+        git("worktree", "add", str(target_dir), "-b", branch, base, cwd=root)
     except TaskError as exc:
         raise TaskError(f"Could not create worktree for [{task_id}]:\n{exc}")
 
@@ -391,7 +514,6 @@ def cmd_claim(args: argparse.Namespace) -> int:
         except Exception:
             force_rmtree(target_dir)
             git("worktree", "prune", cwd=root, check=False)
-        base = settings.base_branch
         commits_ahead = git(
             "log",
             "--no-merges",
@@ -408,7 +530,8 @@ def cmd_claim(args: argparse.Namespace) -> int:
     print(f"Claimed [{task_id}]:")
     print(f"  Branch:   {branch}")
     print(f"  Worktree: {target_dir}")
-    print(f"\nWork in the worktree path above. To complete:\n  python task.py close {task_id} --outcome 'Summary'")
+    # F15: quote task_id in hint
+    print(f"\nWork in the worktree path above. To complete:\n  python task.py close '{task_id}' --outcome 'Summary'")
     return 0
 
 
@@ -448,33 +571,68 @@ def cmd_close(args: argparse.Namespace) -> int:
     clean_id = task_id.lstrip("#")
     branch = f"{BRANCH_PREFIX}{clean_id}"
 
+    # F5: check base branch exists at the start
+    if not git_ok("show-ref", "--verify", "--quiet", f"refs/heads/{base}", cwd=root):
+        raise TaskError(f"base branch '{base}' not found; set backlog.baseBranch")
+
+    # F9: Primary tree must be on the base branch
+    trees = worktree_list(root)
+    primary_tree = trees[0]
+    primary_path = Path(primary_tree["path"]).resolve()
+    primary_branch = primary_tree.get("branch")
+    if primary_branch != base:
+        raise TaskError(f"Primary tree {primary_path} is on branch '{primary_branch}', expected base branch '{base}'.")
+
     if not branch_exists(branch, cwd=root):
         raise TaskError(f"Task [{task_id}] is not claimed (branch {branch} does not exist).")
 
     wt_path = None
-    for t in worktree_list(root):
+    for t in trees:
         if t["branch"] == branch:
-            wt_path = Path(t["path"])
+            wt_path = Path(t["path"]).resolve()
             break
 
     if not wt_path or not wt_path.is_dir():
         raise TaskError(f"Worktree for [{task_id}] not found. Run adopt first.")
 
-    dirt = content_dirt(wt_path, worktree_root=settings.worktree_root)
-    if dirt:
+    # F1: If cwd is inside the claim worktree, refuse cleanly before touching anything
+    try:
+        cwd_resolved = cwd.resolve()
+        if cwd_resolved == wt_path or wt_path in cwd_resolved.parents:
+            raise TaskError(
+                f"Cannot close from inside the claim worktree; run this command from the primary tree ({primary_path})."
+            )
+    except ValueError:
+        pass
+
+    # F2: Check uncommitted changes in BOTH trees before any write
+    wt_dirt = content_dirt(wt_path, worktree_root=settings.worktree_root)
+    if wt_dirt:
         raise TaskError(
-            f"Worktree {wt_path} contains uncommitted work:\n{dirt}\n"
+            f"Worktree {wt_path} contains uncommitted work:\n{wt_dirt}\n"
             "Commit all changes inside the worktree before running close."
+        )
+
+    main_dirt = content_dirt(primary_path, worktree_root=settings.worktree_root)
+    if main_dirt:
+        raise TaskError(
+            f"Primary tree {primary_path} has uncommitted changes:\n{main_dirt}\n"
+            "Commit them in the primary tree first. Never stash, as these may belong to another session."
         )
 
     wt_settings = load_settings(wt_path)
     wt_layout = get_layout(wt_settings)
+    item = wt_layout.find(task_id)
+    if not item:
+        raise TaskError(f"Task [{task_id}] not found in worktree backlog.")
 
-    def do_close():
-        return wt_layout.close(task_id, "Closed", args.outcome.strip())
+    # F2: If worktree item is already Closed, skip item update and commit
+    if item.status != "Closed":
+        def do_close():
+            return wt_layout.close(task_id, "Closed", args.outcome.strip())
 
-    summary = f"chore(backlog): close [{task_id}]"[:72]
-    safe_commit(wt_path, summary, wt_layout.paths_for(task_id), do_close)
+        summary = f"chore(backlog): close [{task_id}]"[:72]
+        safe_commit(wt_path, summary, wt_layout.paths_for(task_id), do_close)
 
     # Sync base branch into worktree
     merged = subprocess.run(
@@ -494,34 +652,26 @@ def cmd_close(args: argparse.Namespace) -> int:
         err = (merged.stderr or merged.stdout).strip()
         raise TaskError(f"Sync merge of {base} into {branch} failed:\n{err}")
 
-    # Check for primary tree dirt
-    main_dirt = content_dirt(root, worktree_root=settings.worktree_root)
-    if main_dirt:
-        raise TaskError(
-            f"Primary tree {root} has uncommitted changes:\n{main_dirt}\n"
-            "Commit them in the primary tree first. Never stash, as these may belong to another session."
-        )
-
-    # Atomic merge under lock
-    lock_file = git_dir(root) / "merge.lock"
+    # Atomic merge under lock in primary tree
+    lock_file = git_dir(primary_path) / "merge.lock"
     with MergeLock(lock_file):
         merge_res = subprocess.run(
             ["git", "merge", "--no-ff", branch, "-m", f"Merge {branch}: {args.outcome.strip()}"],
-            cwd=str(root),
+            cwd=str(primary_path),
             capture_output=True,
             text=True,
         )
         if merge_res.returncode != 0:
-            git("merge", "--abort", cwd=root, check=False)
+            git("merge", "--abort", cwd=primary_path, check=False)
             err = (merge_res.stderr or merge_res.stdout).strip()
             raise TaskError(f"Merge into {base} failed:\n{err}")
 
         try:
             force_rmtree(wt_path)
-            git("worktree", "prune", cwd=root, check=False)
+            git("worktree", "prune", cwd=primary_path, check=False)
         except Exception as exc:
             print(f"Warning: Merged, but could not remove worktree {wt_path}: {exc}")
-        git("branch", "-d", branch, cwd=root)
+        git("branch", "-d", branch, cwd=primary_path)
 
     print(f"Successfully closed and merged [{task_id}] into {base}.")
     return 0
@@ -537,6 +687,10 @@ def cmd_abandon(args: argparse.Namespace) -> int:
     task_id = args.id.strip().strip("'\"").strip("[]")
     clean_id = task_id.lstrip("#")
     branch = f"{BRANCH_PREFIX}{clean_id}"
+
+    # F5: check base branch exists at the start
+    if not git_ok("show-ref", "--verify", "--quiet", f"refs/heads/{base}", cwd=root):
+        raise TaskError(f"base branch '{base}' not found; set backlog.baseBranch")
 
     if not branch_exists(branch, cwd=root):
         raise TaskError(f"Task [{task_id}] is not claimed.")
@@ -556,13 +710,14 @@ def cmd_abandon(args: argparse.Namespace) -> int:
                     "Pass --force to discard uncommitted changes."
                 )
 
+        # F5: run git log with check=True
         log_out = git(
             "log",
             "--no-merges",
             "--format=%h %s",
             f"{base}..{branch}",
             cwd=root,
-            check=False,
+            check=True,
         )
         claim_subjects = {
             f"chore(backlog): claim [{task_id}]",

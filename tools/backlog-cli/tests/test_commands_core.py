@@ -443,3 +443,123 @@ def test_abandon_refuses_own_commits_and_force_restores(tmp_path: Path, run_cli)
     ref_check_after = subprocess.run(["git", "show-ref", "--verify", "--quiet", "refs/heads/claim/TASK-1"], cwd=str(repo))
     assert ref_check_after.returncode != 0
 
+
+def test_close_from_inside_claim_worktree_refuses(tmp_path: Path, run_cli):
+    """F1: close run from inside the claim worktree refuses cleanly naming primary tree."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_f1")
+    run_cli(repo, "open", "Task F1")
+    run_cli(repo, "claim", "#001")
+    wt_dir = (tmp_path / "worktrees" / "001").resolve()
+    res = run_cli(wt_dir, "close", "#001", "--outcome", "Done")
+    assert res.exit_code != 0
+    assert "Cannot close from inside the claim worktree" in res.output
+    assert str(repo.resolve()) in res.output
+
+
+def test_close_rerun_after_sync_conflict_skips_item_update(tmp_path: Path, run_cli):
+    """F2: close rerun after resolving sync conflict succeeds and doesn't duplicate outcome."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_f2")
+    run_cli(repo, "open", "Task F2")
+    run_cli(repo, "claim", "#001")
+    wt_dir = (tmp_path / "worktrees" / "001").resolve()
+
+    # Create conflict on README.md
+    (wt_dir / "README.md").write_text("branch edit\n", encoding="utf-8")
+    subprocess.run(["git", "commit", "-qam", "branch edit"], cwd=str(wt_dir), check=True)
+    (repo / "README.md").write_text("main edit\n", encoding="utf-8")
+    subprocess.run(["git", "commit", "-qam", "main edit"], cwd=str(repo), check=True)
+
+    # First close attempt fails on sync merge
+    p1 = run_cli(repo, "close", "#001", "--outcome", "OUTCOME-ONCE")
+    assert p1.exit_code != 0
+
+    # Resolve conflict in worktree
+    subprocess.run(["git", "checkout", "--ours", "README.md"], cwd=str(wt_dir), check=True)
+    subprocess.run(["git", "add", "README.md"], cwd=str(wt_dir), check=True)
+    subprocess.run(["git", "commit", "-qm", "resolve"], cwd=str(wt_dir), check=True)
+
+    # Re-run close succeeds
+    p2 = run_cli(repo, "close", "#001", "--outcome", "OUTCOME-ONCE")
+    assert p2.exit_code == 0
+    content = (repo / "BACKLOG.md").read_text(encoding="utf-8")
+    assert content.count("OUTCOME-ONCE") == 1
+
+
+def test_claim_branches_from_base_branch(tmp_path: Path, run_cli):
+    """F4: claim branches from base branch, not from current tree HEAD."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_f4")
+    run_cli(repo, "open", "Task 1")
+    run_cli(repo, "open", "Task 2")
+    run_cli(repo, "claim", "#001")
+    wt1 = (tmp_path / "worktrees" / "001").resolve()
+    (wt1 / "work.txt").write_text("wt1 work\n", encoding="utf-8")
+    subprocess.run(["git", "add", "work.txt"], cwd=str(wt1), check=True)
+    subprocess.run(["git", "commit", "-qm", "wt1 work"], cwd=str(wt1), check=True)
+
+    # Run claim for #002 from inside wt1
+    p = run_cli(wt1, "claim", "#002")
+    assert p.exit_code == 0
+    # claim/002 should not contain wt1's unmerged work commit
+    a_work = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(wt1), capture_output=True, text=True).stdout.strip()
+    leaked = subprocess.run(["git", "merge-base", "--is-ancestor", a_work, "claim/002"], cwd=str(repo)).returncode == 0
+    assert not leaked
+
+
+def test_claim_close_abandon_missing_base_refuses(tmp_path: Path, run_cli):
+    """F5: claim, close, and abandon refuse if base branch ref does not exist."""
+    repo = tmp_path / "repo_f5"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "trunk"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=str(repo), check=True)
+    (repo / "BACKLOG.md").write_text("# Project Backlog\n\n- **Entry style:** full\n\n## 📋 In Progress\n\n## 📌 Backlog (Open Tasks)\n\n## ✅ Completed\n\n## 🧊 Icebox (Not Doing / Rejected)\n", encoding="utf-8")
+    (repo / "README.md").write_text("readme\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=str(repo), check=True)
+
+    run_cli(repo, "open", "Task on trunk")
+
+    # 1. claim refuses when base branch ('main') not found
+    res_claim = run_cli(repo, "claim", "#001")
+    assert res_claim.exit_code != 0
+    assert "base branch 'main' not found; set backlog.baseBranch" in res_claim.output
+
+    # Configure baseBranch and claim
+    subprocess.run(["git", "config", "backlog.baseBranch", "trunk"], cwd=str(repo), check=True)
+    res_claim_ok = run_cli(repo, "claim", "#001")
+    assert res_claim_ok.exit_code == 0
+
+    # Unset baseBranch again
+    subprocess.run(["git", "config", "--unset", "backlog.baseBranch"], cwd=str(repo), check=True)
+
+    # 2. close refuses when base branch not found
+    res_close = run_cli(repo, "close", "#001", "--outcome", "Done")
+    assert res_close.exit_code != 0
+    assert "base branch 'main' not found; set backlog.baseBranch" in res_close.output
+
+    # 3. abandon refuses when base branch not found
+    res_abandon = run_cli(repo, "abandon", "#001")
+    assert res_abandon.exit_code != 0
+    assert "base branch 'main' not found; set backlog.baseBranch" in res_abandon.output
+
+
+def test_close_refuses_when_primary_not_on_base(tmp_path: Path, run_cli):
+    """F9: close refuses before any write unless the primary tree is on the base branch."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_f9")
+    run_cli(repo, "open", "Task F9")
+    run_cli(repo, "claim", "#001")
+    subprocess.run(["git", "checkout", "-q", "-b", "side"], cwd=str(repo), check=True)
+    res = run_cli(repo, "close", "#001", "--outcome", "Done")
+    assert res.exit_code != 0
+    assert "expected base branch 'main'" in res.output
+
+
+def test_claim_hint_quotes_task_id(tmp_path: Path, run_cli):
+    """F15: claim hint quotes the task ID so shell '#' does not start a comment."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_f15")
+    run_cli(repo, "open", "Task F15")
+    res = run_cli(repo, "claim", "#001")
+    assert res.exit_code == 0
+    assert "python task.py close '#001' --outcome 'Summary'" in res.output
+
+
