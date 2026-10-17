@@ -94,6 +94,8 @@ Write `[probe]/REPORT.md`:
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.0] - 2026-10-17
 #### Added
 - Initial template: a brief for a probe subagent with no branch, commits or reviewer; a scratch probe
   folder with raw output; settled candidates, scene and load; automated checks, optional specifics and
