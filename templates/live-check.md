@@ -117,6 +117,8 @@ Commands: [`one`, `two`, …]. Run them in a second terminal while the app runs.
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.0] - 2026-10-17
 #### Added
 - Initial template: a live check the user runs against the real application after a phase merges, in two
   forms (a short section at the end of the phase brief, or a sheet of its own named
