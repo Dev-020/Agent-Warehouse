@@ -17,7 +17,7 @@ Related protocols:
 - Operating constraints and working posture: [[agent-protocol]]
 - External working memory: [[working-memory]]
 - Safe writes to live data: [[safe-write]]
-- Session logging and handoffs: [[session-log]]
+- Session logging and hand-overs: [[session-log]]
 
 ---
 
@@ -130,6 +130,9 @@ Guessing or extrapolating by analogy is never permitted.
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- Wording: "handoff" is now "hand-over" (state passed between sessions), matching
+  `protocol/phased-implementation`'s terms. No rule changed.
 
 ### [0.1.0] - 2026-09-15
 #### Added

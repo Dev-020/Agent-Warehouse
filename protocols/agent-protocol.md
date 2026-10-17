@@ -9,7 +9,7 @@ settings:
     description: "Folder for agent notes, working context, and operational guides"
     default: "AI"
   session_folder:
-    description: "Folder where per-session agent handoff logs live"
+    description: "Folder where per-session agent hand-over logs live"
     default: "AI/session"
 requires: []
 replaces: null
@@ -21,7 +21,7 @@ Binding rules and operational invariants for any AI agent working within this pr
 
 Detailed procedures for specific workflows live in companion documents:
 - External working memory: [[working-memory]]
-- Session logging and handoffs: [[session-log]]
+- Session logging and hand-overs: [[session-log]]
 - Safe writes to live or fragile data: [[safe-write]]
 - Fact verification and citations: [[research-discipline]]
 
@@ -35,14 +35,14 @@ Agent capability varies across execution environments. These distinctions are lo
 |---|---|---|---|
 | **Local CLI agents** (Claude Code, Gemini CLI, Agy CLI) | Yes (`.md`, code, scripts) | Arbitrary shell, compilers, package runners, git | Extraction, code changes, refactors, tests, cleanup |
 | **IDE assistants & local subagents** (Antigravity, Cursor) | Yes (`.md`, code, scripts) | Sandboxed or approved terminal commands, background tasks | Interactive development, plan review, multi-turn implementation |
-| **Sandboxed desktop/cowork agents** (Claude Cowork) | Yes (when mounted) | Restricted shell (proxy blocks package installs, UI blocks shell typing) | Inspection, read-heavy analysis; hand off tasks requiring local pip/compilers |
+| **Sandboxed desktop/cowork agents** (Claude Cowork) | Yes (when mounted) | Restricted shell (proxy blocks package installs, UI blocks shell typing) | Inspection, read-heavy analysis; pass tasks requiring local pip/compilers to a local agent |
 | **Web chats & mobile interfaces** (Gemini Chat/Spark, Claude Chat) | No direct disk write (or Drive create-only) | Sandboxed Python runner or none; emits Google Docs or chat prose | Discussion, high-level planning, exploratory search |
 
-### Operational handoff rule
+### Operational hand-over rule
 
 Sandboxed web and mobile chat tools cannot execute native build tools or install missing local packages. Furthermore, web tools like Gemini Chat/Spark emit native Google Docs rather than markdown files, introducing severe format conversion risks (see §3).
 
-**Hard rule:** For any task requiring native package environments, compiler execution, or in-place file modifications, execute with a local filesystem-capable agent or hand off cleanly via [[session-log]].
+**Hard rule:** For any task requiring native package environments, compiler execution, or in-place file modifications, execute with a local filesystem-capable agent or hand over cleanly via [[session-log]].
 
 ---
 
@@ -111,7 +111,7 @@ Multiple agents, human collaborators, or background processes frequently operate
 - **Check modified timestamps:** Inspect file modification times before and after reading or writing critical shared files.
 - **Recompute plans from live data:** Never execute an implementation plan derived from an earlier turn without verifying that underlying files have not shifted.
 - **Respect recent writes:** Never delete or overwrite files created moments prior by another session. Prefer localized edits over file replacement.
-- **Record session handoffs:** Document non-trivial changes, open threads, and environment flags in `{{session_folder}}` following [[session-log]].
+- **Record session hand-overs:** Document non-trivial changes, open threads, and environment flags in `{{session_folder}}` following [[session-log]].
 
 ---
 
@@ -126,6 +126,10 @@ Multiple agents, human collaborators, or background processes frequently operate
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- Wording: "handoff" is now "hand-over" (state passed between sessions), matching
+  `protocol/phased-implementation`'s terms. No setting, rule or step changed; only the `session_folder`
+  description reads differently.
 
 ### [0.1.0] - 2026-09-15
 #### Added

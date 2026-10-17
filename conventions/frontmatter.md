@@ -62,7 +62,7 @@ Note types are restricted to the following closed set:
 | Type | Description | Typical Location |
 |---|---|---|
 | `concept` | Fundamental concepts, topical explanations, domain theory. | `concepts/`, `wiki/` |
-| `session-log` | Agent handoff log or developer work session record. | `AI/session/`, `sessions/` |
+| `session-log` | Agent hand-over log or developer work session record. | `AI/session/`, `sessions/` |
 | `note` | General atomic note, meeting notes, or raw capture. | `notes/` |
 | `index` | Structural maps, directory catalogs, navigation hubs. | `00_INDEX.md`, root |
 | `workflow` | Standard operational procedures and recurring playbooks. | `workflows/`, `AI/` |
@@ -81,7 +81,7 @@ Certain note types require or support specialized fields alongside the universal
 
 ### 4.1. Session logs (`type: session-log`)
 
-Session logs document agent activities and cross-session handoffs. This table is the complete
+Session logs document agent activities and cross-session hand-overs. This table is the complete
 schema; [[session-log]] explains how each field is used.
 
 | Field | Required | Description |
@@ -90,12 +90,12 @@ schema; [[session-log]] explains how each field is used.
 | `date` | Yes | Date of session (`YYYY-MM-DD`). Also the creation date. |
 | `audience` | Yes | `agent` or `team`. |
 | `written_by` | Yes | Agent engine or developer identifier (e.g. `claude-code`, `antigravity`). |
-| `wired` | Yes | `true` once the log is linked into the session index and its handoffs are applied; `false` while it awaits a filesystem-capable agent. |
-| `coordination_state` | Optional | Handoff state: `claimed`, `in-progress`, `acked`, `handed-off` or `done`. |
+| `wired` | Yes | `true` once the log is linked into the session index and its hand-overs are applied; `false` while it awaits a filesystem-capable agent. |
+| `coordination_state` | Optional | Hand-over state: `claimed`, `in-progress`, `acked`, `handed-off` or `done`. |
 | `created` | Optional | If present, must equal `date`. |
 | `tags` | Optional | Topic tags for discovery. |
 | `summary` | Optional | One-line headline. |
-| `open_threads` | Optional | Pointers to active investigations or incomplete handoffs. |
+| `open_threads` | Optional | Pointers to active investigations or incomplete hand-overs. |
 
 ### 4.2. Warehouse items (`convention`, `protocol`, `architecture`, `template`)
 
@@ -144,6 +144,10 @@ In academic or course-scoped vaults:
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- Wording: "handoff" is now "hand-over" (state passed between sessions), matching
+  `protocol/phased-implementation`'s terms. No field or value changed: `coordination_state`
+  keeps `handed-off`.
 
 ### [0.2.0] - 2026-09-17
 #### Changed

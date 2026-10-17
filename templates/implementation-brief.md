@@ -2,21 +2,89 @@
 id: template/implementation-brief
 version: 0.1.0
 status: draft
-summary: Copyable brief for one phase of a phased implementation — rules, staffing row, settled Orchestrator decisions, interfaces, checkpoint steps, tests and the report format.
+summary: Copyable brief for one phase of a phased implementation — rules, staffing row, settled Orchestrator decisions, interfaces, checkpoint steps, tests and the report format, plus an optional section for work another engine does.
 applies-to: [codebase]
 settings: {}
 requires: []
 replaces: null
 ---
 
-<!-- Used by [[phased-implementation]] (Stage 2, step 2) and [[phase-staffing]]. Copy it, fill every [bracketed] placeholder, delete this comment. -->
+<!-- Used by [[phased-implementation]] (Stage 2, step 2) and [[phase-staffing]]. Save it as `BRIEF_<id>_<phase>.md`, fill every [bracketed] placeholder, delete these comments. A brief is a task given to an agent; a hand-over is state passed between sessions (the session log and the active context). Keep "How this round runs" only when another engine does part of the phase; otherwise delete it. -->
 
-# Task Handoff — [Item ID] [Phase]: [Phase title]
+# Brief — [Item ID] [Phase]: [Phase title]
 
-> **From:** Orchestrator | **To:** [one model implementer subagent per step / one continued model implementer across steps] | **Written:** [YYYY-MM-DD]
+> **From:** the Orchestrator ([engine], [model]) | **To:** [one model implementer subagent per step / one continued model implementer across steps] | **Written:** [YYYY-MM-DD]
 > **Plan:** [path to the plan] (approved): [§ that specifies this phase] is the spec; [§ with the rules or invariants] are the rules; [§ with the tests] lists the tests that must exist.
 > **Branch / worktree:** `[branch]` at `[worktree path]`, from `[integration branch]` ([what is already merged]; suite [N passed, M skipped]).
 > **Read first:** this brief; [plan sections]; the previous hand-over [path to the last session log] ("What [previous phase] delivered" is the interface you build on); then the code you touch.
+
+## How this round runs (only when another engine does part of the phase)
+<!-- Per [[phase-staffing]], "Handing work to another engine". Name engines only in the filled copy, never in this template. If this brief was already handed out before the split was chosen, put this section in its own file, `BRIEF_<id>_<phase>_<engine>.md`, and point it at this brief as the spec. -->
+
+**Why another engine:** [the reason, e.g. this side's usage limit, or the user's choice for this phase]. The user agreed on [YYYY-MM-DD], including the model change.
+
+| Agent | Engine (side) | Does | Never does |
+|---|---|---|---|
+| Orchestrator | [engine] | [checks each stop against the commits and the raw test output; starts the reviewer; triages; merges] | Writes product code |
+| Implementer | [engine, model] | The steps below, one commit per step, targeted tests, a report at each stop | Runs the full suite before step [last step]; reviews its own work; edits tracking files; merges |
+| Reviewer | [engine, model: the strongest available] | Reviews the phase's commits against this brief, one failing probe per finding | Edits the code |
+| [Second orchestrator, if the other side runs a complete pipeline] | [engine] | [gives the implementer one step at a time, checks each commit, starts its own reviewer] | Writes product code |
+
+- **The channel:** [there is no direct channel between the sides. Files in the repository carry the work: this brief going out, the report coming back at `[report path]`. The user relays the start prompt below and a one-line prompt each way.]
+- **Stops:** [after which steps the other side stops and reports, and what it waits for before going on].
+
+### What the sending engine used for this task
+[engine] ([model]) on [YYYY-MM-DD], when it prepared this work. Only what this work needs, as it was actually done:
+
+| Capability | How it was done |
+|---|---|
+| Read files | [tool, path style] |
+| Write and edit files | [tools; encoding and line endings] |
+| Run commands | [shell, path style] |
+| Run tests | `[targeted test command]` |
+| Use git | [how; whether commits run the repository's hooks] |
+| [Other, e.g. images, screenshots, network] | [what was used and what it returned] |
+
+**Environment:** [OS]; [shell]; [interpreter, test runner and CLI versions the steps call]; [repository quirks, e.g. a git folder outside the tree, a commit-message hook].
+
+### Step 0 for the receiver: capability check
+Before writing any code, check each row above against your own engine and report one of **same**, **different (and how)** or **missing** for each. Also run these from the worktree and report their output verbatim:
+
+```
+[git -C <worktree> status --short --branch]
+[interpreter --version]
+[test runner --version]
+```
+
+If [something essential, e.g. writing files in the worktree, running the interpreter, running git] is missing, **stop and report** instead of building.
+
+### Where this round differs from the rest of this brief
+- [Who does the checkpoint after each step, and who checks it again afterwards.]
+- Commits end with a `Co-Authored-By:` line naming the model that actually wrote them.
+- [Anything the other side must not run: e.g. the project's own CLIs, the live app, the network.]
+
+### What comes back, and how it is checked
+Each report (through the user, at `[report path]`) carries: the capability check (first report only); the items in "Report" below; the reviewer's findings with each probe's result before and after the fix, verbatim, if the other side reviews; and **the model each agent ran on**. Every number names the command or file it came from. The Orchestrator then checks the report against the commits and re-runs the targeted tests [and the probes] before building on it.
+
+### Start prompt
+The user pastes this into a new [engine] session started in the worktree folder:
+
+```text
+You are the [role] for [step or phase] of a phased build. Another engine ([engine]) is the
+orchestrator; the user carries your report back to it.
+
+Working folder: [worktree path] (branch [branch]). Work only inside this folder.
+
+Read, in this order:
+1. [this brief's path] - the spec, your capability check and your report.
+2. [plan sections]
+3. [AGENTS.md or the project's instruction file]
+
+Then do Step 0, the capability check; if anything essential is missing, stop and report.
+Build [step] only. Run only the targeted tests the brief names. Commit as the brief says.
+Stop, and reply with the report in this brief's format.
+If the brief, the plan and the code disagree, stop and report instead of guessing.
+```
 
 ## How this phase is staffed
 <!-- Per [[phase-staffing]] -->
@@ -72,7 +140,7 @@ replaces: null
 - Then `[full test command]` **once** for the whole suite. If it fails, fix and run it once more; report both results.
 
 ## Report (each step)
-Commit hash; files changed; tests added and their targeted results ([last step]: the full-suite line); anything in this brief you couldn't do as written, and why; assertions removed or weakened; raw-file citations for any measured metrics; open questions for the next step.
+Commit hash; files changed; tests added and their targeted results ([last step]: the full-suite line); anything in this brief you couldn't do as written, and why; assertions removed or weakened; raw-file citations for any measured metrics; open questions for the next step; the model you ran on.
 
 ## Out of scope (later phases)
 - [Item] ([phase that owns it]).
@@ -80,6 +148,20 @@ Commit hash; files changed; tests added and their targeted results ([last step]:
 ## Changelog
 
 ### [Unreleased]
+#### Added
+- An optional "How this round runs" section for a phase another engine does part of, complete or mixed:
+  the reason and the user's agreement, the agents per side, the channel, what the sending engine used
+  for this task (with engine, model and date), an environment line, the receiver's Step 0 capability
+  check (same, different or missing), where the round differs, what comes back and how it is checked,
+  and a start prompt. Generalised from Shadow Cursor #063 MM5b–MM13 and #081 A2a, and the warehouse's
+  WH-1 Phase 1 Antigravity brief.
+- The report names the model the implementer ran on.
+
+#### Changed
+- The template is a *brief*, not a "Task Handoff": its title is "Brief — …", and it is saved as
+  `BRIEF_<id>_<phase>.md`. A *hand-over* is state passed between sessions. Briefs already saved under
+  the old name need no change.
+- The header names the Orchestrator's engine and model.
 
 ### [0.1.0] - 2026-10-02
 #### Added

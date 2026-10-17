@@ -79,7 +79,7 @@ Follow the protocols and conventions synced in `warehouse/`:
 - Safe file modification: [[warehouse/safe-write]]
 - Task tracking: [[warehouse/backlog]]
 - Commit messages: [[warehouse/commits]]
-- Session handoffs: [[warehouse/session-log]]
+- Session hand-overs: [[warehouse/session-log]]
 ```
 
 *(If you previously had duplicate hand-copied protocol notes in your project, delete them now to prevent confusion).*

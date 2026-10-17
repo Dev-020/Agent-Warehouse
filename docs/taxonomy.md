@@ -82,7 +82,7 @@ Heuristic) │  (e.g., TDD cycle, Release pipeline)│  (e.g., SemVer, commit me
 * **Examples:**
   * `protocol/safe-write`: 5-step sequence for modifying live files (verify target $\to$ read fresh $\to$ compute diff $\to$ write $\to$ verify write).
   * `protocol/worktree-claims`: Atomic branch claim, reservation lock, and merge gate protocol for parallel agent sessions.
-  * `protocol/session-log`: Handoff protocol recording session goals, files modified, and next steps for subsequent agents.
+  * `protocol/session-log`: Hand-over protocol recording session goals, files modified, and next steps for subsequent agents.
 
 ### 5. Workflow (Operational Pipeline / Task Graph)
 * **Definition:** A directed sequence or graph of execution steps transforming inputs into outputs. Workflows coordinate tools, subagents, and human reviews to achieve a specific functional goal.

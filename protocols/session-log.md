@@ -2,7 +2,7 @@
 id: protocol/session-log
 version: 0.2.1
 status: draft
-summary: "How and when agents write session handoff logs and maintain session indexes."
+summary: "How and when agents write session hand-over logs and maintain session indexes."
 applies-to: [vault, codebase]
 settings:
   session_folder:
@@ -17,7 +17,7 @@ replaces: null
 
 # Session Log Protocol
 
-How and when agents record session handoff logs, capture architectural decisions, and maintain project continuity across agent turns.
+How and when agents record session hand-over logs, capture architectural decisions, and maintain project continuity across agent turns.
 
 Related protocols:
 - Operating constraints and working posture: [[agent-protocol]]
@@ -47,8 +47,8 @@ Do not write a log for every trivial prompt. Create a session log when a session
 2. **Makes or reverses a non-trivial decision:** Decides an architectural direction or reverses a prior design (crucial for recording rejected alternatives).
 3. **Establishes reasoning that is expensive to re-derive:** Records non-obvious calculations, performance tradeoffs, or complex domain rules.
 4. **Catches an error or discovered gotcha:** Documents a failure mode, a subtle bug, and *how it was discovered*, so future agents do not repeat it.
-5. **Generates an unapplied decision or handoff:** A sandboxed or chat-based agent proposes changes it cannot apply directly to disk.
-6. **Involves multi-agent task handoffs:** Hands off work across agents or documents concurrent claim boundaries.
+5. **Generates an unapplied decision or hand-over:** A sandboxed or chat-based agent proposes changes it cannot apply directly to disk.
+6. **Passes work between agents:** Hands work to another agent (with its brief) or documents concurrent claim boundaries.
 
 **When to skip:** Single-line bug fixes, routine commits with clear commit messages, minor typo corrections, or repetitive data logging already captured in specialized files.
 
@@ -71,7 +71,7 @@ Session log files reside in `{{session_folder}}/` and follow this format:
 ## Frontmatter schema
 
 The schema is owned by [[frontmatter]] (section 4.1, session logs). This protocol follows it and
-explains what each field means for handoffs. If the two ever disagree, [[frontmatter]] wins.
+explains what each field means for hand-overs. If the two ever disagree, [[frontmatter]] wins.
 
 ```yaml
 ---
@@ -96,18 +96,18 @@ summary: "Optional one-line headline"
   - Local CLI/IDE agents (`claude-code`, `antigravity`) have access to compilers, tests, and filesystem tools.
   - Web or chat agents (`claude-chat`, `gemini-chat`) operate without local test suites; their claims require verification.
 - `wired`: Boolean indicating whether the log is integrated:
-  - `true`: Linked into `{{session_index}}` and any referenced state changes or handoffs have been applied.
+  - `true`: Linked into `{{session_index}}` and any referenced state changes or hand-overs have been applied.
   - `false`: Written by an agent in a create-only environment, awaiting processing by a filesystem-capable agent.
-- `coordination_state`: Optional handoff state, used when coordinating concurrent agents or tracking
-  multi-agent handoffs. One of:
+- `coordination_state`: Optional hand-over state, used when coordinating concurrent agents or tracking
+  multi-agent hand-overs. One of:
   - `claimed`: an agent has taken the work described in the log.
   - `in-progress`: work is under way.
-  - `acked`: the receiving agent has read and accepted the handoff.
+  - `acked`: the receiving agent has read and accepted the hand-over.
   - `handed-off`: work was passed to another agent and is waiting to be picked up.
   - `done`: nothing further is expected from this log.
 - `tags`: Optional topic tags for discovery.
 - `summary`: Optional one-line headline, usually the same text used in `{{session_index}}`.
-- Session logs carry no `updated` or `status` field: a log is an immutable record, and its handoff
+- Session logs carry no `updated` or `status` field: a log is an immutable record, and its hand-over
   state lives in `coordination_state`.
 
 ---
@@ -141,7 +141,7 @@ Tasks deliberately left incomplete, known edge cases deferred to future sessions
 
 ---
 
-## Managing unwired logs and handoffs
+## Managing unwired logs and hand-overs
 
 Agents running in sandboxed or chat-only environments (e.g. Claude chat through cloud storage, web interfaces) often possess create-only filesystem access: they can generate a new session log file, but cannot edit existing source files, execute test suites, or modify `{{session_index}}`.
 
@@ -190,6 +190,10 @@ However, the factual text and claims in a session log are immutable historical r
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- Wording: "handoff" is now "hand-over" (state passed between sessions), and passing work to another
+  agent is described with its brief, matching `protocol/phased-implementation`'s terms. No field, value
+  or step changed; `coordination_state` keeps `handed-off`.
 
 ### [0.2.1] - 2026-10-06
 #### Fixed
