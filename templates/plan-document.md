@@ -1,6 +1,6 @@
 ---
 id: template/plan-document
-version: 0.1.0
+version: 0.2.0
 status: draft
 summary: Copyable template for technical implementation plans with risk tiers, verification, and recovery.
 applies-to: [codebase, vault]
@@ -136,6 +136,8 @@ If the change fails during or after deployment:
 ## Changelog
 
 ### [Unreleased]
+
+### [0.2.0] - 2026-10-17
 #### Changed
 - §6.2 is a table of live checks and gates: the phase each follows, what it covers, and whether the
   next phase waits on it. Each check is written from [[live-check]]; phases that can't be run live, or
