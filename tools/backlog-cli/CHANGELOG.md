@@ -15,6 +15,8 @@
 - Command `amend` (`--note`, `--priority`) to add dated notes and/or change priority, moving open items to their priority position in single/split layouts, writing to the claim worktree if claimed, and refusing changes on closed items (Decision 30).
 - `Item.fields` populates metadata: `severity`, `likelihood`, `depends_on` (list), `parent`, and `resolved`, with normalized IDs (Decision 28).
 - `primary_tree` discovery logic, and `doctor` reports `main tree: <path>` or `main tree: unknown from here (run from the main tree)` (Decision 27).
+- Command `list` (`--status`, `--priority`) to output tab-separated items sorted by priority, created date, and position/name, with live claim overlay (Decision 31).
+- Command `next` to find the highest-priority ready item with claim instructions, or report the count of blocked open items when none are ready (Decision 32).
 
 ### Changed
 - Split `task.py` into internal `backlog_cli` package (`gitops`, `settings`, `ids`, `layouts`, `commands`, `model`).

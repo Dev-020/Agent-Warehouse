@@ -16,6 +16,8 @@ Usage:
     python task.py reject <ID> --reason "Reason for rejection"
     python task.py cancel <ID> --reason "Reason for cancellation"
     python task.py amend <ID> [--note "Note text"] [--priority P1|P2|P3]
+    python task.py list [--status S] [--priority P]
+    python task.py next
 """
 
 from __future__ import annotations
@@ -32,6 +34,8 @@ from backlog_cli.commands import (
     cmd_claim,
     cmd_close,
     cmd_doctor,
+    cmd_list,
+    cmd_next,
     cmd_open,
     cmd_reject,
     cmd_status,
@@ -106,6 +110,16 @@ def main(argv: list[str] | None = None) -> int:
     p_amd.add_argument("--note", default=None, help="Dated note text")
     p_amd.add_argument("--priority", default=None, help="New priority (P1 | P2 | P3)")
     p_amd.set_defaults(func=cmd_amend)
+
+    # list
+    p_list = sub.add_parser("list", help="List backlog items with optional status and priority filters")
+    p_list.add_argument("--status", default=None, help="Filter by status (or 'all')")
+    p_list.add_argument("--priority", default=None, help="Filter by priority (P1 | P2 | P3)")
+    p_list.set_defaults(func=cmd_list)
+
+    # next
+    p_nxt = sub.add_parser("next", help="Find and display the highest-priority ready item")
+    p_nxt.set_defaults(func=cmd_next)
 
     args = parser.parse_args(argv)
     try:

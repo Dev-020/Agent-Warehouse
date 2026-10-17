@@ -954,3 +954,139 @@ def cmd_amend(args: argparse.Namespace) -> int:
     print(f"Amended [{item.id}]")
     return 0
 
+
+def cmd_list(args: argparse.Namespace) -> int:
+    """List backlog items with optional status and priority filtering (Decision 31)."""
+    cwd = Path.cwd()
+    root = repo_root(cwd)
+    primary_path = primary_tree(root)
+    primary_settings = load_settings(primary_path)
+    primary_layout = get_layout(primary_settings)
+
+    claims = claim_branches(root)
+
+    status_filter = args.status.strip() if getattr(args, "status", None) and args.status else None
+    priority_filter = args.priority.strip().upper() if getattr(args, "priority", None) and args.priority else None
+
+    items = primary_layout.items()
+    matched_entries = []
+
+    for idx, item in enumerate(items):
+        claim_match = None
+        for branch in claims:
+            branch_id = branch[len(BRANCH_PREFIX) :]
+            if id_matches(item.id, branch_id):
+                claim_match = branch
+                break
+
+        if claim_match:
+            display_status = f"In Progress ({claim_match})"
+        else:
+            display_status = item.status
+
+        # Priority filter
+        if priority_filter:
+            if (item.priority or "").upper() != priority_filter:
+                continue
+
+        # Status filter
+        if status_filter:
+            if status_filter.lower() == "all":
+                pass
+            elif status_filter.lower() in ("in progress", "in-progress"):
+                if not display_status.startswith("In Progress"):
+                    continue
+            elif status_filter.lower() in ("closed", "completed"):
+                if display_status not in ("Closed", "Completed"):
+                    continue
+            else:
+                if display_status.lower() != status_filter.lower():
+                    continue
+        else:
+            # Default: Open and In Progress
+            if display_status != "Open" and not display_status.startswith("In Progress"):
+                continue
+
+        prio_rank = {"P1": 1, "P2": 2, "P3": 3}.get((item.priority or "").upper(), 99)
+        created = item.fields.get("created") or ""
+        sort_created = created if created else "9999-99-99"
+
+        if primary_settings.layout == "folders":
+            pos = item.path.name if item.path else item.id
+        else:
+            pos = idx
+
+        matched_entries.append((prio_rank, sort_created, pos, item, display_status, created))
+
+    if not matched_entries:
+        print("No items.")
+        return 0
+
+    matched_entries.sort(key=lambda x: (x[0], x[1], x[2]))
+
+    for _, _, _, item, disp_status, created in matched_entries:
+        print(f"{item.id}\t{item.priority or ''}\t{disp_status}\t{created}\t{item.title}")
+
+    return 0
+
+
+def cmd_next(args: argparse.Namespace) -> int:
+    """Find and display the highest-priority ready backlog item (Decision 32)."""
+    cwd = Path.cwd()
+    root = repo_root(cwd)
+    primary_path = primary_tree(root)
+    primary_settings = load_settings(primary_path)
+    primary_layout = get_layout(primary_settings)
+
+    claims = claim_branches(root)
+    items = primary_layout.items()
+
+    ready_items = []
+    blocked_count = 0
+
+    for idx, item in enumerate(items):
+        if item.status != "Open":
+            continue
+
+        is_claimed = False
+        for branch in claims:
+            branch_id = branch[len(BRANCH_PREFIX) :]
+            if id_matches(item.id, branch_id):
+                is_claimed = True
+                break
+
+        deps = item.fields.get("depends_on", [])
+        is_blocked = False
+        if deps:
+            for dep_id in deps:
+                dep_item = next((it for it in items if id_matches(it.id, dep_id)), None)
+                if not dep_item or dep_item.status not in ("Closed", "Completed"):
+                    is_blocked = True
+                    break
+
+        if is_blocked:
+            blocked_count += 1
+        elif not is_claimed:
+            prio_rank = {"P1": 1, "P2": 2, "P3": 3}.get((item.priority or "").upper(), 99)
+            created = item.fields.get("created") or ""
+            sort_created = created if created else "9999-99-99"
+            if primary_settings.layout == "folders":
+                pos = item.path.name if item.path else item.id
+            else:
+                pos = idx
+            ready_items.append((prio_rank, sort_created, pos, item, created))
+
+    if not ready_items:
+        print(f"No ready item. {blocked_count} open item{'s' if blocked_count != 1 else ''} {'is' if blocked_count == 1 else 'are'} blocked.")
+        return 0
+
+    ready_items.sort(key=lambda x: (x[0], x[1], x[2]))
+    _, _, _, best, created = ready_items[0]
+
+    created_str = created if created else "unknown"
+    prio_str = best.priority or "P2"
+    print(f"[{best.id}] {best.title} ({prio_str}, created {created_str})")
+    print(f"claim it with: python task.py claim '{best.id}'")
+    return 0
+
+
