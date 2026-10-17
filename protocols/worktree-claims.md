@@ -160,7 +160,7 @@ If a task is cancelled, blocked, or superseded:
 
 ## 5. Ephemeral Chores (Unowned Transports)
 
-Some repository updates have no backlog task (e.g., session log handoffs, timestamp updates, automated index
+Some repository updates have no backlog task (e.g., session log hand-overs, timestamp updates, automated index
 refreshes).
 
 - **A chore is a transport, not a record:** Ephemeral branch `chore/<slug>` and worktree.
@@ -199,6 +199,9 @@ refreshes).
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- Wording: "handoff" is now "hand-over" (state passed between sessions), matching
+  `protocol/phased-implementation`'s terms. No rule changed.
 
 ### [0.1.1] - 2026-09-26
 #### Changed

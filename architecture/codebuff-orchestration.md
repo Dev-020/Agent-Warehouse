@@ -72,9 +72,9 @@ Instead of running a persistent multi-agent committee, sessions must dynamically
 
 ### Tier 2: Paired (Author + Ephemeral Reviewer) — 15% of Tasks
 - **Roles:** Primary Author + a temporary, single-turn **Ephemeral Reviewer** (using a frontier reasoning model).
-- **The "Git Diff Handoff" Pattern:**
+- **The "Git Diff Review" Pattern:**
   1. Author completes the implementation until internal tests pass.
-  2. Author generates `git diff` and passes **only the diff + architectural invariants** to the Reviewer in a **fresh context window**.
+  2. Author generates `git diff` and passes **only the diff + architectural invariants** (the reviewer's brief) to the Reviewer in a **fresh context window**.
   3. The Reviewer audits the diff in a **single turn**, reporting defects, missing edge cases, and contract deviations.
   4. The Reviewer is **immediately terminated** (preventing multi-turn conversation bloat).
   5. The Author applies the fixes, runs validation, and commits.
@@ -120,6 +120,9 @@ The original Codebuff framework introduced 7 distinct roles. Empirical testing r
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- Tier 2's "Git Diff Handoff" pattern is now the "Git Diff Review" pattern: what the author passes
+  is the reviewer's brief, not a hand-over, matching `protocol/phased-implementation`'s terms.
 
 ### [0.1.1] - 2026-10-02
 #### Changed

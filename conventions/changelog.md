@@ -93,7 +93,7 @@ Bottom of `protocols/session-log.md`:
 
 ### [2.1.0] - 2026-09-20
 #### Added
-- Optional "open threads" section for handoffs.
+- Optional "open threads" section for hand-overs.
 #### Fixed
 - Clarified when a log is required.
 
@@ -135,6 +135,9 @@ Bottom of `protocols/session-log.md`:
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- The example entry says "hand-overs" instead of "handoffs", matching
+  `protocol/phased-implementation`'s terms. No rule changed.
 
 ### [0.1.1] - 2026-09-16
 #### Fixed

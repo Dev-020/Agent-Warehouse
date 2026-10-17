@@ -169,7 +169,7 @@ A setting may declare a default, which projects get when they don't set it:
 
 ### [2.1.0] - 2026-09-20
 #### Added
-- Optional "open threads" section for handoffs.
+- Optional "open threads" section for hand-overs.
 #### Fixed
 - Clarified when a log is required.
 
