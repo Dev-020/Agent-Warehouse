@@ -327,3 +327,80 @@ def test_amend_priority_moves_open_leaves_in_progress(tmp_path: Path, run_cli, l
         c = f.read_text(encoding="utf-8")
         assert "priority: P1" in c
         assert "priority P2 → P1: Urgent in flight" in c
+
+
+def test_claimed_dependent_note_goes_to_worktree(tmp_path: Path, run_cli):
+    """Decision 36: Rejecting/cancelling dependency notes claimed dependent in its worktree, not on main."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_dep_wt", layout="single")
+    run_cli(repo, "open", "Base task")
+    run_cli(repo, "open", "Dependent task")
+
+    # Add Depends on to #002 on main before claiming
+    bf = repo / "BACKLOG.md"
+    content = bf.read_text(encoding="utf-8")
+    content = content.replace("### [#002] Dependent task\n- **Status**: `Open` | **Priority**: `P2`\n- **Created**:", "### [#002] Dependent task\n- **Status**: `Open` | **Priority**: `P2`\n- **Depends on**: #001\n- **Created**:")
+    bf.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "add", "BACKLOG.md"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-qm", "add dep"], cwd=str(repo), check=True)
+
+    # Claim #002
+    res_claim = run_cli(repo, "claim", "#002")
+    assert res_claim.exit_code == 0
+    wt = tmp_path / "worktrees" / "002"
+    (wt / "w.txt").write_text("work\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(wt), check=True)
+    subprocess.run(["git", "commit", "-qm", "work"], cwd=str(wt), check=True)
+
+    # Reject #001 on main
+    res_rej = run_cli(repo, "reject", "#001", "--reason", "dropped")
+    assert res_rej.exit_code == 0
+
+    # 1. Main entry for #002 is untouched
+    main_after = (repo / "BACKLOG.md").read_text(encoding="utf-8")
+    assert "which was rejected: dropped" not in main_after
+
+    # 2. Note is written and committed in #002's worktree
+    wt_content = (wt / "BACKLOG.md").read_text(encoding="utf-8")
+    assert "which was rejected: dropped" in wt_content
+    st_wt = subprocess.run(["git", "status", "--porcelain"], cwd=str(wt), capture_output=True, text=True).stdout
+    assert st_wt.strip() == ""
+
+    # Commit message in wt is chore(backlog): note [#002]
+    wt_log = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=str(wt), capture_output=True, text=True).stdout.strip()
+    assert wt_log == "chore(backlog): note [#002]"
+
+    # 3. #002 closes cleanly and note survives on main
+    res_close = run_cli(repo, "close", "#002", "--outcome", "done")
+    assert res_close.exit_code == 0
+    main_final = (repo / "BACKLOG.md").read_text(encoding="utf-8")
+    assert "<<<<<<<" not in main_final
+    assert "which was rejected: dropped" in main_final
+
+
+def test_claimed_dependent_warning_when_no_worktree(tmp_path: Path, run_cli):
+    """Decision 36: Warning appears with exact amend command when claimed dependent has no worktree."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_dep_nowt", layout="single")
+    run_cli(repo, "open", "Base task")
+    run_cli(repo, "open", "Dependent task")
+
+    bf = repo / "BACKLOG.md"
+    content = bf.read_text(encoding="utf-8")
+    content = content.replace("### [#002] Dependent task\n- **Status**: `Open` | **Priority**: `P2`\n- **Created**:", "### [#002] Dependent task\n- **Status**: `Open` | **Priority**: `P2`\n- **Depends on**: #001\n- **Created**:")
+    bf.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "add", "BACKLOG.md"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-qm", "add dep"], cwd=str(repo), check=True)
+
+    # Claim #002
+    run_cli(repo, "claim", "#002")
+    wt = tmp_path / "worktrees" / "002"
+
+    # Remove worktree to simulate missing worktree
+    import shutil
+    shutil.rmtree(wt)
+    subprocess.run(["git", "worktree", "prune"], cwd=str(repo), check=True)
+
+    # Reject #001 on main
+    res_rej = run_cli(repo, "reject", "#001", "--reason", "cancelled feature")
+    assert res_rej.exit_code == 0
+    assert "Warning: claimed dependent [#002] has no worktree" in res_rej.output
+    assert "python task.py amend '#002' --note 'Depends on [#001], which was rejected: cancelled feature." in res_rej.output

@@ -620,3 +620,127 @@ def test_folder_item_restore_on_hook_failure(tmp_path: Path, run_cli):
     assert st.strip() == ""
 
 
+@pytest.mark.parametrize("layout,union", [("single", False), ("split", True), ("split", False)])
+def test_parallel_claims_close_cleanly(tmp_path: Path, run_cli, layout: str, union: bool):
+    """Decisions 34, 35: Parallel claims close cleanly across single, split, and split with merge=union."""
+    sub = f"repo_par_{layout}_{'union' if union else 'nounion'}"
+    repo = _init_repo_with_backlog(tmp_path / sub, layout=layout)
+    if union:
+        if not (repo / ".gitattributes").exists():
+            (repo / ".gitattributes").write_text("BACKLOG/Closed.md merge=union\n", encoding="utf-8")
+            subprocess.run(["git", "add", ".gitattributes"], cwd=str(repo), check=True)
+            subprocess.run(["git", "commit", "-qm", "attrs"], cwd=str(repo), check=True)
+    else:
+        if (repo / ".gitattributes").exists():
+            (repo / ".gitattributes").unlink()
+            subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
+            subprocess.run(["git", "commit", "-qm", "remove attrs"], cwd=str(repo), check=True)
+
+    for title in ("One", "Two", "Three"):
+        res = run_cli(repo, "open", title)
+        assert res.exit_code == 0
+
+    for tid in ("#001", "#002"):
+        res = run_cli(repo, "claim", tid)
+        assert res.exit_code == 0
+        wt = tmp_path / "worktrees" / tid.lstrip("#")
+        (wt / f"w{tid.lstrip('#')}.txt").write_text("work\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=str(wt), check=True)
+        subprocess.run(["git", "commit", "-qm", "work"], cwd=str(wt), check=True)
+
+    p1 = run_cli(repo, "close", "#001", "--outcome", "done one")
+    assert p1.exit_code == 0
+    p2 = run_cli(repo, "close", "#002", "--outcome", "done two")
+    assert p2.exit_code == 0
+
+    files = [repo / "BACKLOG.md"] if layout == "single" else [repo / "BACKLOG" / "Open.md", repo / "BACKLOG" / "Closed.md"]
+    text = "".join(f.read_text(encoding="utf-8") for f in files)
+    assert (repo / "w001.txt").exists()
+    assert (repo / "w002.txt").exists()
+    assert "<<<<<<<" not in text
+    assert text.count("[#001]") == 1
+    assert text.count("[#002]") == 1
+    assert text.count("`Closed`") >= 2
+    st = subprocess.run(["git", "status", "--porcelain"], cwd=str(repo), capture_output=True, text=True).stdout
+    assert st.strip() == ""
+
+
+@pytest.mark.parametrize("layout", ["single", "split"])
+def test_auto_resolved_merge_preserves_item_opened_in_worktree(tmp_path: Path, run_cli, layout: str):
+    """Decision 35: Items opened inside a claim worktree survive auto-resolved sync merge."""
+    repo = _init_repo_with_backlog(tmp_path / f"repo_sub_{layout}", layout=layout)
+    for title in ("First task", "Second task"):
+        run_cli(repo, "open", title)
+
+    run_cli(repo, "claim", "#001")
+    run_cli(repo, "claim", "#002")
+
+    wt1 = tmp_path / "worktrees" / "001"
+    (wt1 / "work1.txt").write_text("w1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(wt1), check=True)
+    subprocess.run(["git", "commit", "-qm", "w1"], cwd=str(wt1), check=True)
+
+    wt2 = tmp_path / "worktrees" / "002"
+    # Open a subtask inside wt2
+    res_open = run_cli(wt2, "open", "Child task opened in claim")
+    assert res_open.exit_code == 0
+    (wt2 / "work2.txt").write_text("w2\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(wt2), check=True)
+    subprocess.run(["git", "commit", "-qm", "w2"], cwd=str(wt2), check=True)
+
+    # Close #001 first on main
+    res_c1 = run_cli(repo, "close", "#001", "--outcome", "done 1")
+    assert res_c1.exit_code == 0
+
+    # Close #002 next on main (triggers sync merge with conflict, auto-resolved)
+    res_c2 = run_cli(repo, "close", "#002", "--outcome", "done 2")
+    assert res_c2.exit_code == 0
+
+    files = [repo / "BACKLOG.md"] if layout == "single" else [repo / "BACKLOG" / "Open.md", repo / "BACKLOG" / "Closed.md"]
+    text = "".join(f.read_text(encoding="utf-8") for f in files)
+    assert "<<<<<<<" not in text
+    assert "[#001]" in text
+    assert "[#002]" in text
+    assert "[#003]" in text
+    assert "Child task opened in claim" in text
+    st = subprocess.run(["git", "status", "--porcelain"], cwd=str(repo), capture_output=True, text=True).stdout
+    assert st.strip() == ""
+
+
+def test_branch_changed_other_entry_leaves_conflicts_for_user(tmp_path: Path, run_cli):
+    """Decision 35: If the claim branch changed another entry, do not auto-resolve; leave conflicts for user."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_changed_other", layout="single")
+    run_cli(repo, "open", "Alpha task")
+    run_cli(repo, "open", "Beta task")
+
+    run_cli(repo, "claim", "#001")
+    run_cli(repo, "claim", "#002")
+
+    wt1 = tmp_path / "worktrees" / "001"
+    (wt1 / "work1.txt").write_text("w1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(wt1), check=True)
+    subprocess.run(["git", "commit", "-qm", "w1"], cwd=str(wt1), check=True)
+
+    # Close #001 on main
+    res_c1 = run_cli(repo, "close", "#001", "--outcome", "done alpha")
+    assert res_c1.exit_code == 0
+
+    # In wt2, improperly edit #001's entry
+    wt2 = tmp_path / "worktrees" / "002"
+    bf = wt2 / "BACKLOG.md"
+    content = bf.read_text(encoding="utf-8")
+    content = content.replace("### [#001] Alpha task", "### [#001] Alpha task edited on branch")
+    bf.write_text(content, encoding="utf-8")
+    (wt2 / "work2.txt").write_text("w2\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(wt2), check=True)
+    subprocess.run(["git", "commit", "-qm", "edit other entry"], cwd=str(wt2), check=True)
+
+    # Close #002 should fail and name [#001]
+    res_c2 = run_cli(repo, "close", "#002", "--outcome", "done beta")
+    assert res_c2.exit_code != 0
+    assert "[#001]" in res_c2.output or "001" in res_c2.output
+    # Check that conflicts are left in wt2
+    wt2_content = bf.read_text(encoding="utf-8")
+    assert "<<<<<<<" in wt2_content
+
+

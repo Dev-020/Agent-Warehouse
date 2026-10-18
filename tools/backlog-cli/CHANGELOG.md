@@ -19,6 +19,8 @@
 - Command `next` to find the highest-priority ready item with claim instructions, or report the count of blocked open items when none are ready (Decision 32).
 
 ### Changed
+- `close` syncs with base branch before writing the close commit, automatically resolving backlog-only merge conflicts for single and split layouts (Decisions 34, 35).
+- While an item is claimed, `reject` and `cancel` route dependent notes to the claim worktree after the main commit rather than editing claimed entries on main (Decision 36).
 - Split `task.py` into internal `backlog_cli` package (`gitops`, `settings`, `ids`, `layouts`, `commands`, `model`).
 - Core commands (`open`, `claim`, `close`, `abandon`, `adopt`, `status`) operate polymorphically across all three layouts.
 - `claim` refuses before creating a branch if the target item does not exist or is not `Open`.

@@ -34,7 +34,23 @@ from backlog_cli.gitops import (
     worktree_list,
 )
 from backlog_cli.ids import allocate_id, collect_branch_ids, id_matches
-from backlog_cli.layouts import PRIORITY_LEVELS, file_find_entry, get_layout, parse_frontmatter
+from backlog_cli.layouts import (
+    PRIORITY_LEVELS,
+    SingleFileLayout,
+    SplitFilesLayout,
+    file_extract_entry,
+    file_find_entry,
+    file_insert_entry_at_bottom,
+    file_insert_entry_by_priority,
+    find_sections,
+    get_layout,
+    item_from_entry_lines,
+    parse_frontmatter,
+    parse_markdown_entries,
+    read_text_preserving,
+    split_lines_exact,
+    write_text_preserving,
+)
 from backlog_cli.model import Item
 from backlog_cli.settings import load_settings
 
@@ -581,6 +597,212 @@ def cmd_adopt(args: argparse.Namespace) -> int:
     )
 
 
+def resolve_sync_conflicts(wt_path: Path, task_id: str, base: str, branch: str, wt_settings: Any) -> None:
+    """Resolve backlog-only conflicts during sync merge in close (Decisions 34, 35)."""
+    if wt_settings.layout not in ("single", "split"):
+        raise TaskError(
+            f"{base} does not merge cleanly into {branch}.\n"
+            f"Resolve conflicts in {wt_path}, commit, and re-run close."
+        )
+
+    conflicted_raw = git("diff", "--name-only", "--diff-filter=U", cwd=wt_path, check=False).splitlines()
+    conflicted_paths = {p.strip().replace("\\", "/") for p in conflicted_raw if p.strip()}
+    if not conflicted_paths:
+        unmerged = git("ls-files", "-u", cwd=wt_path, check=False).strip()
+        if unmerged:
+            raise TaskError(
+                f"{base} does not merge cleanly into {branch}.\n"
+                f"Resolve conflicts in {wt_path}, commit, and re-run close."
+            )
+        return
+
+    if wt_settings.layout == "single":
+        rel_bf = wt_settings.backlog_file.resolve().relative_to(wt_path.resolve()).as_posix()
+        allowed_paths = {rel_bf}
+    else:
+        rel_bd = wt_settings.backlog_dir.resolve().relative_to(wt_path.resolve()).as_posix()
+        allowed_paths = {
+            f"{rel_bd}/Open.md",
+            f"{rel_bd}/Closed.md",
+            f"{rel_bd}/00_BACKLOG.md",
+        }
+
+    if not conflicted_paths.issubset(allowed_paths):
+        raise TaskError(
+            f"{base} does not merge cleanly into {branch}.\n"
+            f"Resolve conflicts in {wt_path}, commit, and re-run close."
+        )
+
+    mb_res = subprocess.run(
+        ["git", "merge-base", "HEAD", "MERGE_HEAD"],
+        cwd=str(wt_path),
+        capture_output=True,
+        text=True,
+    )
+    if mb_res.returncode != 0 or not mb_res.stdout.strip():
+        raise TaskError(
+            f"{base} does not merge cleanly into {branch}.\n"
+            f"Resolve conflicts in {wt_path}, commit, and re-run close."
+        )
+    mb = mb_res.stdout.strip()
+
+    def _norm_tid(tid: str) -> str:
+        return tid.strip().strip("'\"").strip("[]").lstrip("#")
+
+    def _clean_entry_lines(raw: list[str]) -> list[str]:
+        lines = [l.rstrip("\r\n") for l in raw]
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        while lines and not lines[-1].strip():
+            lines.pop()
+        return lines
+
+    def _read_entries_from_ref(ref: str) -> dict[str, tuple[str, list[str]]]:
+        entries: dict[str, tuple[str, list[str]]] = {}
+        if wt_settings.layout == "single":
+            paths_to_read = [rel_bf]
+        else:
+            paths_to_read = [f"{rel_bd}/Open.md", f"{rel_bd}/Closed.md", f"{rel_bd}/00_BACKLOG.md"]
+
+        for rel_p in paths_to_read:
+            proc = subprocess.run(
+                ["git", "show", f"{ref}:{rel_p}"],
+                cwd=str(wt_path),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if proc.returncode == 0 and proc.stdout:
+                lines = split_lines_exact(proc.stdout)
+                for s, e, tid, _ in parse_markdown_entries(lines):
+                    clean_lines = list(lines[s:e])
+                    while clean_lines and not clean_lines[-1].strip():
+                        clean_lines.pop()
+                    entries[_norm_tid(tid)] = (tid, clean_lines)
+        return entries
+
+    head_entries = _read_entries_from_ref("HEAD")
+    mb_entries = _read_entries_from_ref(mb)
+
+    norm_task_id = _norm_tid(task_id)
+
+    # Check if the branch changed any other entry (compare HEAD with merge base)
+    for norm_id, (raw_tid, mb_lines) in mb_entries.items():
+        if norm_id == norm_task_id:
+            continue
+        if norm_id not in head_entries:
+            raise TaskError(
+                f"Branch changed entry [{raw_tid}] not owned by claim [{task_id}].\n"
+                f"Resolve conflicts in {wt_path}, commit, and re-run close."
+            )
+        _, head_lines = head_entries[norm_id]
+        if _clean_entry_lines(mb_lines) != _clean_entry_lines(head_lines):
+            raise TaskError(
+                f"Branch changed entry [{raw_tid}] not owned by claim [{task_id}].\n"
+                f"Resolve conflicts in {wt_path}, commit, and re-run close."
+            )
+
+    if norm_task_id not in head_entries:
+        raise TaskError(f"Task [{task_id}] not found in HEAD of claim branch.")
+
+    _, claimed_entry_lines = head_entries[norm_task_id]
+    new_branch_items = [
+        norm_id for norm_id in head_entries if norm_id != norm_task_id and norm_id not in mb_entries
+    ]
+
+    # Start each conflicted file from the base branch's version (MERGE_HEAD)
+    for p in conflicted_paths:
+        git("checkout", "MERGE_HEAD", "--", p, cwd=wt_path, check=True)
+
+    if wt_settings.layout == "single":
+        text, le, bom, tail = read_text_preserving(wt_settings.backlog_file)
+        lines = split_lines_exact(text[: len(text) - len(tail)] if tail else text) if text else []
+
+        if file_find_entry(lines, task_id):
+            file_extract_entry(lines, task_id)
+
+        claimed_item = item_from_entry_lines(claimed_entry_lines)
+        sections = find_sections(lines)
+        if claimed_item.status == "In Progress":
+            file_insert_entry_at_bottom(lines, sections, claimed_entry_lines, "in progress")
+        elif claimed_item.status == "Open":
+            file_insert_entry_by_priority(lines, sections, claimed_entry_lines)
+        elif claimed_item.status in ("Rejected", "Cancelled"):
+            file_insert_entry_at_bottom(lines, sections, claimed_entry_lines, "icebox")
+        elif claimed_item.status == "Closed":
+            file_insert_entry_at_bottom(lines, sections, claimed_entry_lines, "completed")
+
+        for norm_id in new_branch_items:
+            _, new_lines = head_entries[norm_id]
+            new_item = item_from_entry_lines(new_lines)
+            sections = find_sections(lines)
+            if new_item.status == "Open":
+                file_insert_entry_by_priority(lines, sections, new_lines)
+            elif new_item.status == "In Progress":
+                file_insert_entry_at_bottom(lines, sections, new_lines, "in progress")
+            elif new_item.status in ("Rejected", "Cancelled"):
+                file_insert_entry_at_bottom(lines, sections, new_lines, "icebox")
+            elif new_item.status == "Closed":
+                file_insert_entry_at_bottom(lines, sections, new_lines, "completed")
+
+        write_text_preserving(wt_settings.backlog_file, lines, le, bom, tail=tail)
+        git("add", "--", rel_bf, cwd=wt_path, check=True)
+
+    else:
+        open_file = wt_settings.backlog_dir / "Open.md"
+        closed_file = wt_settings.backlog_dir / "Closed.md"
+
+        o_text, o_le, o_bom, o_tail = read_text_preserving(open_file)
+        open_lines = split_lines_exact(o_text[: len(o_text) - len(o_tail)] if o_tail else o_text) if o_text else []
+        c_text, c_le, c_bom, c_tail = read_text_preserving(closed_file)
+        closed_lines = split_lines_exact(c_text[: len(c_text) - len(c_tail)] if c_tail else c_text) if c_text else []
+
+        if file_find_entry(open_lines, task_id):
+            file_extract_entry(open_lines, task_id)
+        if file_find_entry(closed_lines, task_id):
+            file_extract_entry(closed_lines, task_id)
+
+        claimed_item = item_from_entry_lines(claimed_entry_lines)
+        if claimed_item.status in ("In Progress", "Open"):
+            open_sections = find_sections(open_lines)
+            if claimed_item.status == "In Progress":
+                file_insert_entry_at_bottom(open_lines, open_sections, claimed_entry_lines, "in progress")
+            else:
+                file_insert_entry_by_priority(open_lines, open_sections, claimed_entry_lines)
+        else:
+            closed_sections = find_sections(closed_lines)
+            target_sec = "completed" if claimed_item.status == "Closed" else "icebox"
+            file_insert_entry_at_bottom(closed_lines, closed_sections, claimed_entry_lines, target_sec)
+
+        for norm_id in new_branch_items:
+            _, new_lines = head_entries[norm_id]
+            new_item = item_from_entry_lines(new_lines)
+            if new_item.status in ("In Progress", "Open"):
+                open_sections = find_sections(open_lines)
+                if new_item.status == "Open":
+                    file_insert_entry_by_priority(open_lines, open_sections, new_lines)
+                else:
+                    file_insert_entry_at_bottom(open_lines, open_sections, new_lines, "in progress")
+            else:
+                closed_sections = find_sections(closed_lines)
+                target_sec = "completed" if new_item.status == "Closed" else "icebox"
+                file_insert_entry_at_bottom(closed_lines, closed_sections, new_lines, target_sec)
+
+        write_text_preserving(open_file, open_lines, o_le, o_bom, tail=o_tail)
+        write_text_preserving(closed_file, closed_lines, c_le, c_bom, tail=c_tail)
+        git("add", "--", f"{rel_bd}/Open.md", f"{rel_bd}/Closed.md", cwd=wt_path, check=True)
+        if f"{rel_bd}/00_BACKLOG.md" in conflicted_paths:
+            git("add", "--", f"{rel_bd}/00_BACKLOG.md", cwd=wt_path, check=True)
+
+    # Finish the merge commit
+    proc = subprocess.run(["git", "commit", "--no-edit"], cwd=str(wt_path), capture_output=True, text=True)
+    if proc.returncode != 0:
+        git("merge", "--abort", cwd=wt_path, check=False)
+        err = (proc.stderr or proc.stdout).strip()
+        raise TaskError(f"Merge commit failed:\n{err}")
+
+
 def cmd_close(args: argparse.Namespace) -> int:
     """Record completion, gate, merge to base branch, and tear down worktree."""
     check_no_git_dir_env()
@@ -646,31 +868,31 @@ def cmd_close(args: argparse.Namespace) -> int:
     if not item:
         raise TaskError(f"Task [{task_id}] not found in worktree backlog.")
 
-    # F2: If worktree item is already Closed, skip item update and commit
+    # Decision 34: Unless the item is already Closed on the branch (F2), sync base into claim worktree
     if item.status != "Closed":
+        # Step 2: Sync base branch into worktree
+        merged = subprocess.run(
+            ["git", "merge", base, "-m", f"{clean_id}: sync with {base}"],
+            cwd=str(wt_path),
+            capture_output=True,
+            text=True,
+        )
+        if merged.returncode != 0:
+            unmerged = git("ls-files", "-u", cwd=wt_path, check=False).strip()
+            if unmerged:
+                resolve_sync_conflicts(wt_path, task_id, base, branch, wt_settings)
+            else:
+                git("merge", "--abort", cwd=wt_path, check=False)
+                err = (merged.stderr or merged.stdout).strip()
+                raise TaskError(f"Sync merge of {base} into {branch} failed:\n{err}")
+
+        # Step 3: The close write and its commit, on the merged tree
+        wt_layout_merged = get_layout(wt_settings)
         def do_close():
-            return wt_layout.close(task_id, "Closed", args.outcome.strip())
+            return wt_layout_merged.close(task_id, "Closed", args.outcome.strip())
 
         summary = f"chore(backlog): close [{task_id}]"[:72]
-        safe_commit(wt_path, summary, wt_layout.paths_for(task_id), do_close)
-
-    # Sync base branch into worktree
-    merged = subprocess.run(
-        ["git", "merge", base, "-m", f"{clean_id}: sync with {base}"],
-        cwd=str(wt_path),
-        capture_output=True,
-        text=True,
-    )
-    if merged.returncode != 0:
-        unmerged = git("ls-files", "-u", cwd=wt_path, check=False).strip()
-        if unmerged:
-            raise TaskError(
-                f"{base} does not merge cleanly into {branch}.\n"
-                f"Resolve conflicts in {wt_path}, commit, and re-run close."
-            )
-        git("merge", "--abort", cwd=wt_path, check=False)
-        err = (merged.stderr or merged.stdout).strip()
-        raise TaskError(f"Sync merge of {base} into {branch} failed:\n{err}")
+        safe_commit(wt_path, summary, wt_layout_merged.paths_for(task_id), do_close)
 
     # Atomic merge under lock in primary tree
     lock_file = git_dir(primary_path) / "merge.lock"
@@ -817,14 +1039,21 @@ def _handle_reject_or_cancel(args: argparse.Namespace, new_status: str) -> int:
     if item.status != "Open":
         raise TaskError(f"[{task_id}] is {item.status}; only Open items can be rejected or cancelled")
 
-    # Dependents (convention §4.6): every Open or In Progress item in the same tree
-    # whose depends_on lists the ID gets a dated note
-    dependents: list[Item] = []
+    # Dependents (convention §4.6, Decision 36):
+    # Separate unclaimed dependents (noted on main in the main commit)
+    # from claimed dependents (noted in their claim worktrees after the main commit).
+    unclaimed_dependents: list[Item] = []
+    claimed_dependents: list[Item] = []
     for it in primary_layout.items():
         if it.status in ("Open", "In Progress") and not id_matches(it.id, item.id):
             deps = it.fields.get("depends_on", [])
             if any(id_matches(d, item.id) for d in deps):
-                dependents.append(it)
+                dep_clean_id = it.id.lstrip("#").strip("[]")
+                dep_branch = f"{BRANCH_PREFIX}{dep_clean_id}"
+                if branch_exists(dep_branch, cwd=root):
+                    claimed_dependents.append(it)
+                else:
+                    unclaimed_dependents.append(it)
 
     # Warning for items on claim branches (Decision 29)
     for cb in claim_branches(root):
@@ -841,7 +1070,7 @@ def _handle_reject_or_cancel(args: argparse.Namespace, new_status: str) -> int:
     )
 
     pre_paths = set(primary_layout.paths_for(item.id))
-    for dep in dependents:
+    for dep in unclaimed_dependents:
         pre_paths.update(primary_layout.paths_for(dep.id))
 
     def do_action():
@@ -850,7 +1079,7 @@ def _handle_reject_or_cancel(args: argparse.Namespace, new_status: str) -> int:
         w_paths, moves = primary_layout.close(item.id, new_status, reason)
         written_paths.extend(w_paths)
         all_moves.extend(moves)
-        for dep in dependents:
+        for dep in unclaimed_dependents:
             w_paths, moves = primary_layout.append_note(dep.id, dep_note)
             written_paths.extend(w_paths)
             all_moves.extend(moves)
@@ -859,6 +1088,34 @@ def _handle_reject_or_cancel(args: argparse.Namespace, new_status: str) -> int:
     action_verb = "reject" if new_status == "Rejected" else "cancel"
     commit_msg = f"chore(backlog): {action_verb} [{item.id}]"[:72]
     safe_commit(primary_path, commit_msg, list(pre_paths), do_action)
+
+    # Decision 36: While an item is claimed, only its claim branch edits its entry.
+    # Note claimed dependents in their worktrees after the main commit has succeeded.
+    trees = worktree_list(root)
+    for dep in claimed_dependents:
+        dep_clean_id = dep.id.lstrip("#").strip("[]")
+        dep_branch = f"{BRANCH_PREFIX}{dep_clean_id}"
+        wt_path = None
+        for t in trees:
+            if t["branch"] == dep_branch:
+                wt_path = Path(t["path"]).resolve()
+                break
+
+        cmd_hint = f"python task.py amend '{dep.id}' --note '{dep_note}'"
+        if not wt_path or not wt_path.is_dir():
+            print(f"Warning: claimed dependent [{dep.id}] has no worktree. Run instead:\n  {cmd_hint}")
+        else:
+            try:
+                wt_settings = load_settings(wt_path)
+                wt_layout = get_layout(wt_settings)
+                def do_dep_note():
+                    return wt_layout.append_note(dep.id, dep_note)
+
+                dep_commit_msg = f"chore(backlog): note [{dep.id}]"[:72]
+                safe_commit(wt_path, dep_commit_msg, wt_layout.paths_for(dep.id), do_dep_note)
+            except Exception as exc:
+                print(f"Warning: could not update claimed dependent [{dep.id}]: {exc}\nRun instead:\n  {cmd_hint}")
+
     print(f"{new_status} [{item.id}]: {reason}")
     return 0
 
