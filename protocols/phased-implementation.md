@@ -14,7 +14,7 @@ settings:
   session_folder:
     description: "Folder where session logs are written"
     default: "AI/session"
-requires: [protocol/session-log@0.2, protocol/working-memory@0.2, protocol/worktree-claims@0.1, protocol/phase-staffing@0.2, template/plan-document@0.2, template/implementation-brief@0.2, template/probe-brief@0.1, template/review-request@0.1, template/live-check@0.1, template/active-context@0.1, architecture/codebuff-orchestration@0.1]
+requires: [protocol/session-log@0.2, protocol/working-memory@0.2, protocol/worktree-claims@0.1, protocol/phase-staffing@0.2, template/plan-document@0.2, template/implementation-brief@0.2, template/probe-brief@0.1, template/review-request@0.1, template/live-check@0.1, template/fix-round-brief@0.1, template/active-context@0.1, architecture/codebuff-orchestration@0.1]
 replaces: null
 ---
 
@@ -55,6 +55,7 @@ Reviewers always run on the strongest frontier reasoning model. Implementer mode
 | Research and probe notes | `{{memory_folder}}/notes/NN_<topic>.md` | Orchestrator, from its own research or a probe's report | Ground truth the plan relies on |
 | Plan | `{{memory_folder}}/PLAN_<slug>.md`, from [[plan-document]] | Orchestrator | The approved spec, split into phases |
 | Brief, one per phase | `{{memory_folder}}/BRIEF_<id>_<phase>.md`, from [[implementation-brief]] | Orchestrator | What the phase's implementers need, with staffing and decisions settled; its "How this round runs" section when another engine does part of the phase |
+| Fix-round brief, after a review with findings to fix | `{{memory_folder}}/BRIEF_<id>_<phase>_fix.md` (`_fix2` for a later round), from [[fix-round-brief]] | Orchestrator | The triaged findings, their settled fixes and probes, for the same worktree and branch |
 | Live check, for the phases that have one | A section at the end of the brief, or `{{memory_folder}}/LIVE_CHECK_<id>_<phase>.md` (`…_gate<N>.md` for a gate), from [[live-check]] | Orchestrator; the user fills in the results | Shows the merged phase works in the real application; a gate holds the next phase until it passes |
 | Worktree and branch | Per [[worktree-claims]] | Orchestrator | Isolates the phase until it merges |
 | Step commits | The phase branch | Implementers | The checkpoints |
@@ -100,7 +101,7 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 5. **Verify each checkpoint yourself:** commit exists, tree is clean, and the step's changed test files pass. **Do not run the full suite.** Answer open questions in the next step's prompt.
 6. **Review the phase** with one fresh reviewer on the frontier model (Variant B in [[review-request]]). Each finding carries a severity (blocker, should-fix, nit) and an executable **probe script** that fails on current code and passes when fixed. Probes run via `run_all.py`.
 7. **Triage.** Accept each finding, or adjust the fix and record why. **Blockers cannot be deferred.** Deferring any other finding requires user approval and converts it into a backlog item per [[review-request]].
-8. **Fix step.** Confirmed by **re-running the probes**, not a second full review: passing probes demonstrate the defect is fixed. Add a second review pass only if fixes rework complex state machines or a finding cannot be reduced to a probe script.
+8. **Fix step.** Give the implementer a brief from [[fix-round-brief]]: the phase brief still applies, and the triaged findings with their probes are the spec. Confirmed by **re-running the probes**, not a second full review: passing probes demonstrate the defect is fixed. Add a second review pass only if fixes rework complex state machines or a finding cannot be reduced to a probe script.
 9. **Run the full test suite once**, at the end of the last step. Run a second time only if the first run fails.
 10. **Merge** into the integration branch with `--no-ff`. Remove worktree and branch.
     - **Live check, if the plan or brief has one for this phase** ([[live-check]]). The user runs it from the primary tree, one check at a time. Check the results against the raw evidence before calling it passed, triage what it found per [[issue-triage]], and record its re-run triggers. A failure gets a fix step and a rerun from the first step. If it is a live gate, the next phase doesn't start until it passes.
@@ -151,6 +152,10 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 ## Changelog
 
 ### [Unreleased]
+#### Added
+- Stage 2 step 8: the fix step's brief comes from `template/fix-round-brief`. New Artifacts row for
+  the fix-round brief, `BRIEF_<id>_<phase>_fix.md`.
+- Requires `template/fix-round-brief@0.1`.
 
 ### [0.4.1] - 2026-10-17
 #### Fixed
