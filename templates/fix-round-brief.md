@@ -57,6 +57,8 @@ Write `[report path]` in the worktree and commit it with the step. Commit hashes
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.0] - 2026-10-18
 #### Added
 - Initial template: a brief for the fix step after a phase review. The phase brief still applies; the
   triaged findings, each with its severity, likelihood, settled fix and probe, are the spec; the same
