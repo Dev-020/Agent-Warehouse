@@ -10,8 +10,15 @@ import pytest
 from conftest import make_repo
 
 
-def _init_repo_with_backlog(path: Path, layout: str = "single") -> Path:
-    repo = make_repo(path)
+import shutil
+import tempfile
+
+_TEMPLATE_CACHE: dict[str, Path] = {}
+
+
+def _create_layout_template(layout: str) -> Path:
+    td = Path(tempfile.mkdtemp(prefix=f"tpl_{layout}_"))
+    repo = make_repo(td / "repo")
     if layout == "single":
         backlog_text = (
             "# Project Backlog\n\n"
@@ -60,6 +67,14 @@ def _init_repo_with_backlog(path: Path, layout: str = "single") -> Path:
         subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
     subprocess.run(["git", "commit", "-q", "-m", "add backlog"], cwd=str(repo), check=True)
     return repo
+
+
+def _init_repo_with_backlog(path: Path, layout: str = "single") -> Path:
+    if layout not in _TEMPLATE_CACHE:
+        _TEMPLATE_CACHE[layout] = _create_layout_template(layout)
+    template = _TEMPLATE_CACHE[layout]
+    shutil.copytree(str(template), str(path), dirs_exist_ok=True)
+    return path
 
 
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
@@ -618,5 +633,183 @@ def test_folder_item_restore_on_hook_failure(tmp_path: Path, run_cli):
     assert not (wt_dir / "BACKLOG" / "closed" / folder.name).exists()
     st = subprocess.run(["git", "status", "--porcelain"], cwd=str(wt_dir), capture_output=True, text=True).stdout
     assert st.strip() == ""
+
+
+@pytest.mark.parametrize("layout,union", [("single", False), ("split", True), ("split", False)])
+def test_parallel_claims_close_cleanly(tmp_path: Path, run_cli, layout: str, union: bool):
+    """Decisions 34, 35: Parallel claims close cleanly across single, split, and split with merge=union."""
+    sub = f"repo_par_{layout}_{'union' if union else 'nounion'}"
+    repo = _init_repo_with_backlog(tmp_path / sub, layout=layout)
+    if union:
+        if not (repo / ".gitattributes").exists():
+            (repo / ".gitattributes").write_text("BACKLOG/Closed.md merge=union\n", encoding="utf-8")
+            subprocess.run(["git", "add", ".gitattributes"], cwd=str(repo), check=True)
+            subprocess.run(["git", "commit", "-qm", "attrs"], cwd=str(repo), check=True)
+    else:
+        if (repo / ".gitattributes").exists():
+            (repo / ".gitattributes").unlink()
+            subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
+            subprocess.run(["git", "commit", "-qm", "remove attrs"], cwd=str(repo), check=True)
+
+    for title in ("One", "Two", "Three"):
+        res = run_cli(repo, "open", title)
+        assert res.exit_code == 0
+
+    for tid in ("#001", "#002"):
+        res = run_cli(repo, "claim", tid)
+        assert res.exit_code == 0
+        wt = tmp_path / "worktrees" / tid.lstrip("#")
+        (wt / f"w{tid.lstrip('#')}.txt").write_text("work\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=str(wt), check=True)
+        subprocess.run(["git", "commit", "-qm", "work"], cwd=str(wt), check=True)
+
+    p1 = run_cli(repo, "close", "#001", "--outcome", "done one")
+    assert p1.exit_code == 0
+    p2 = run_cli(repo, "close", "#002", "--outcome", "done two")
+    assert p2.exit_code == 0
+
+    files = [repo / "BACKLOG.md"] if layout == "single" else [repo / "BACKLOG" / "Open.md", repo / "BACKLOG" / "Closed.md"]
+    text = "".join(f.read_text(encoding="utf-8") for f in files)
+    assert (repo / "w001.txt").exists()
+    assert (repo / "w002.txt").exists()
+    assert "<<<<<<<" not in text
+    assert text.count("[#001]") == 1
+    assert text.count("[#002]") == 1
+    assert text.count("`Closed`") >= 2
+    st = subprocess.run(["git", "status", "--porcelain"], cwd=str(repo), capture_output=True, text=True).stdout
+    assert st.strip() == ""
+
+
+@pytest.mark.parametrize("layout", ["single", "split"])
+def test_auto_resolved_merge_preserves_item_opened_in_worktree(tmp_path: Path, run_cli, layout: str):
+    """Decision 35: Items opened inside a claim worktree survive auto-resolved sync merge."""
+    repo = _init_repo_with_backlog(tmp_path / f"repo_sub_{layout}", layout=layout)
+    for title in ("First task", "Second task"):
+        run_cli(repo, "open", title)
+
+    run_cli(repo, "claim", "#001")
+    run_cli(repo, "claim", "#002")
+
+    wt1 = tmp_path / "worktrees" / "001"
+    (wt1 / "work1.txt").write_text("w1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(wt1), check=True)
+    subprocess.run(["git", "commit", "-qm", "w1"], cwd=str(wt1), check=True)
+
+    wt2 = tmp_path / "worktrees" / "002"
+    # Open a subtask inside wt2
+    res_open = run_cli(wt2, "open", "Child task opened in claim")
+    assert res_open.exit_code == 0
+    (wt2 / "work2.txt").write_text("w2\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(wt2), check=True)
+    subprocess.run(["git", "commit", "-qm", "w2"], cwd=str(wt2), check=True)
+
+    # Close #001 first on main
+    res_c1 = run_cli(repo, "close", "#001", "--outcome", "done 1")
+    assert res_c1.exit_code == 0
+
+    # Close #002 next on main (triggers sync merge with conflict, auto-resolved)
+    res_c2 = run_cli(repo, "close", "#002", "--outcome", "done 2")
+    assert res_c2.exit_code == 0
+
+    files = [repo / "BACKLOG.md"] if layout == "single" else [repo / "BACKLOG" / "Open.md", repo / "BACKLOG" / "Closed.md"]
+    text = "".join(f.read_text(encoding="utf-8") for f in files)
+    assert "<<<<<<<" not in text
+    assert "[#001]" in text
+    assert "[#002]" in text
+    assert "[#003]" in text
+    assert "Child task opened in claim" in text
+    st = subprocess.run(["git", "status", "--porcelain"], cwd=str(repo), capture_output=True, text=True).stdout
+    assert st.strip() == ""
+
+
+def test_branch_changed_other_entry_leaves_conflicts_for_user(tmp_path: Path, run_cli):
+    """Decision 35: If the claim branch changed another entry, do not auto-resolve; leave conflicts for user."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_changed_other", layout="single")
+    run_cli(repo, "open", "Alpha task")
+    run_cli(repo, "open", "Beta task")
+
+    run_cli(repo, "claim", "#001")
+    run_cli(repo, "claim", "#002")
+
+    wt1 = tmp_path / "worktrees" / "001"
+    (wt1 / "work1.txt").write_text("w1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(wt1), check=True)
+    subprocess.run(["git", "commit", "-qm", "w1"], cwd=str(wt1), check=True)
+
+    # Close #001 on main
+    res_c1 = run_cli(repo, "close", "#001", "--outcome", "done alpha")
+    assert res_c1.exit_code == 0
+
+    # In wt2, improperly edit #001's entry
+    wt2 = tmp_path / "worktrees" / "002"
+    bf = wt2 / "BACKLOG.md"
+    content = bf.read_text(encoding="utf-8")
+    content = content.replace("### [#001] Alpha task", "### [#001] Alpha task edited on branch")
+    bf.write_text(content, encoding="utf-8")
+    (wt2 / "work2.txt").write_text("w2\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(wt2), check=True)
+    subprocess.run(["git", "commit", "-qm", "edit other entry"], cwd=str(wt2), check=True)
+
+    # Close #002 should fail and name [#001]
+    res_c2 = run_cli(repo, "close", "#002", "--outcome", "done beta")
+    assert res_c2.exit_code != 0
+    assert "[#001]" in res_c2.output or "001" in res_c2.output
+    # Check that conflicts are left in wt2
+    wt2_content = bf.read_text(encoding="utf-8")
+    assert "<<<<<<<" in wt2_content
+
+
+def test_forged_entries_newlines_and_headings_refused(tmp_path: Path, run_cli):
+    """Decision 41: Refuse newlines in one-line options and leading '#' in --why / --wanted."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_forged", layout="single")
+
+    # Title newline
+    res = run_cli(repo, "open", "Alpha\nBeta")
+    assert res.exit_code != 0
+    assert "title cannot contain newlines" in res.output
+
+    # Criterion newline
+    res = run_cli(repo, "open", "Alpha", "--criterion", "Crit 1\nCrit 2")
+    assert res.exit_code != 0
+    assert "--criterion cannot contain newlines" in res.output
+
+    # Labels newline
+    res = run_cli(repo, "open", "Alpha", "--labels", "lbl1\nlbl2")
+    assert res.exit_code != 0
+    assert "--labels cannot contain newlines" in res.output
+
+    # Why with leading #
+    res = run_cli(repo, "open", "Alpha", "--why", "### Injected Heading")
+    assert res.exit_code != 0
+    assert "--why cannot contain lines starting with '#'" in res.output
+
+    # Wanted with leading #
+    res = run_cli(repo, "open", "Alpha", "--wanted", "Line 1\n# Injected Heading")
+    assert res.exit_code != 0
+    assert "--wanted cannot contain lines starting with '#'" in res.output
+
+    # Open a valid item #001
+    res = run_cli(repo, "open", "Alpha")
+    assert res.exit_code == 0
+
+    # Amend with note newline
+    res = run_cli(repo, "amend", "#001", "--note", "Note line 1\nNote line 2")
+    assert res.exit_code != 0
+    assert "--note cannot contain newlines" in res.output
+
+    # Reject with reason newline
+    res = run_cli(repo, "reject", "#001", "--reason", "Reason line 1\nReason line 2")
+    assert res.exit_code != 0
+    assert "--reason cannot contain newlines" in res.output
+
+    # Claim #001
+    res = run_cli(repo, "claim", "#001")
+    assert res.exit_code == 0
+
+    # Close with outcome newline
+    res = run_cli(repo, "close", "#001", "--outcome", "Outcome line 1\nOutcome line 2")
+    assert res.exit_code != 0
+    assert "--outcome cannot contain newlines" in res.output
+
 
 

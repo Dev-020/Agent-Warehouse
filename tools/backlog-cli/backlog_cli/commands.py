@@ -29,11 +29,29 @@ from backlog_cli.gitops import (
     git,
     git_dir,
     git_ok,
+    primary_tree,
     repo_root,
     worktree_list,
 )
 from backlog_cli.ids import allocate_id, collect_branch_ids, id_matches
-from backlog_cli.layouts import PRIORITY_LEVELS, file_find_entry, get_layout, parse_frontmatter
+from backlog_cli.layouts import (
+    PRIORITY_LEVELS,
+    SingleFileLayout,
+    SplitFilesLayout,
+    file_extract_entry,
+    file_find_entry,
+    file_insert_entry_at_bottom,
+    file_insert_entry_by_priority,
+    find_sections,
+    get_layout,
+    item_from_entry_lines,
+    normalize_item_fields,
+    parse_frontmatter,
+    parse_markdown_entries,
+    read_text_preserving,
+    split_lines_exact,
+    write_text_preserving,
+)
 from backlog_cli.model import Item
 from backlog_cli.settings import load_settings
 
@@ -152,6 +170,106 @@ def find_item_on_branch(root: Path, branch: str, task_id: str, settings: Any) ->
                                 path=Path(md_path),
                             )
         return None
+
+
+def find_all_items_on_branch(root: Path, branch: str, settings: Any) -> list[Item]:
+    """Read all items on a branch ref without checking it out (Decision 39)."""
+    layout_type = settings.layout
+    items: list[Item] = []
+    if layout_type == "single":
+        try:
+            rel = settings.backlog_file.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            rel = settings.backlog_file.name
+        proc = subprocess.run(
+            ["git", "show", f"{branch}:{rel}"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if proc.returncode == 0 and proc.stdout:
+            lines = split_lines_exact(proc.stdout)
+            for s, e, tid, _ in parse_markdown_entries(lines):
+                it = item_from_entry_lines(lines[s:e], settings.backlog_file)
+                items.append(it)
+        return items
+
+    elif layout_type == "split":
+        try:
+            rel_dir = settings.backlog_dir.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            rel_dir = settings.backlog_dir.name
+        for fname in ("Open.md", "Closed.md"):
+            proc = subprocess.run(
+                ["git", "show", f"{branch}:{rel_dir}/{fname}"],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if proc.returncode == 0 and proc.stdout:
+                lines = split_lines_exact(proc.stdout)
+                for s, e, tid, _ in parse_markdown_entries(lines):
+                    it = item_from_entry_lines(lines[s:e], settings.backlog_dir / fname)
+                    items.append(it)
+        return items
+
+    elif layout_type == "folders":
+        try:
+            rel_dir = settings.backlog_dir.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            rel_dir = settings.backlog_dir.name
+        proc_ls = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", branch, "--", f"{rel_dir}/open", f"{rel_dir}/closed"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if proc_ls.returncode != 0:
+            return items
+        md_paths = [
+            l.strip()
+            for l in proc_ls.stdout.splitlines()
+            if l.strip().endswith(".md") and not l.strip().endswith("00_BACKLOG.md")
+        ]
+        for md_path in md_paths:
+            proc_show = subprocess.run(
+                ["git", "show", f"{branch}:{md_path}"],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if proc_show.returncode == 0 and proc_show.stdout:
+                fields, body, _ = parse_frontmatter(proc_show.stdout)
+                fields = normalize_item_fields(fields)
+                tid = str(fields.get("id", "")).strip()
+                if not tid:
+                    fname = Path(md_path).stem
+                    m = re.match(r"^(\d+|[A-Za-z]+-\d+)(?:-|\.md$|/|$)", fname)
+                    if m:
+                        tid = f"#{m.group(1)}" if m.group(1).isdigit() else m.group(1)
+                items.append(
+                    Item(
+                        id=tid,
+                        title=str(fields.get("title", "")),
+                        status=str(fields.get("status", "Open")),
+                        priority=str(fields.get("priority", "P2")),
+                        fields=fields,
+                        body=body,
+                        raw=proc_show.stdout,
+                        path=Path(md_path),
+                    )
+                )
+        return items
+
+    return items
 
 
 
@@ -279,6 +397,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     git_source = detect_git_discovery(root)
     notes.append(f"git: {git_source}")
 
+    # Report main tree (Decision 27)
+    try:
+        main_t = primary_tree(root)
+        notes.append(f"main tree: {main_t}")
+    except TaskError:
+        notes.append("main tree: unknown from here (run from the main tree)")
+
+
     if args.init:
         # Decision 6: doctor --init no longer writes backlog.file
         wroot = (root.parent / "worktrees").resolve()
@@ -401,31 +527,39 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_open(args: argparse.Namespace) -> int:
     """Create a new backlog item and allocate next ID."""
+    if "\r" in args.title or "\n" in args.title:
+        raise TaskError("title cannot contain newlines")
+
+    if args.criterion:
+        for c in args.criterion:
+            if "\r" in c or "\n" in c:
+                raise TaskError("--criterion cannot contain newlines")
+
+    if getattr(args, "labels", None) and args.labels:
+        if "\r" in args.labels or "\n" in args.labels:
+            raise TaskError("--labels cannot contain newlines")
+
+    if getattr(args, "why", None) and args.why:
+        for line in args.why.splitlines():
+            if line.strip().startswith("#"):
+                raise TaskError("--why cannot contain lines starting with '#'")
+
+    if getattr(args, "wanted", None) and args.wanted:
+        for line in args.wanted.splitlines():
+            if line.strip().startswith("#"):
+                raise TaskError("--wanted cannot contain lines starting with '#'")
+
     if args.claim:
         check_no_git_dir_env()
     cwd = Path.cwd()
     root = repo_root(cwd)
-    trees = worktree_list(root)
     current_branch = git("branch", "--show-current", cwd=root, check=False).strip()
 
-    is_secondary_worktree = False
-    try:
-        gd = git("rev-parse", "--git-dir", cwd=root, check=False)
-        gcd = git("rev-parse", "--git-common-dir", cwd=root, check=False)
-        if Path(gd).resolve() != Path(gcd).resolve():
-            is_secondary_worktree = True
-    except Exception:
-        pass
-
-    # Decision 16 (S9): Inside claim/* worktree, write and commit there; otherwise primary worktree
-    if current_branch.startswith(BRANCH_PREFIX) or not is_secondary_worktree:
+    # Decision 27 (S9): Inside claim/* worktree, write and commit there; otherwise primary_tree(root)
+    if current_branch.startswith(BRANCH_PREFIX):
         target_root = root
     else:
-        primary_candidate = Path(trees[0]["path"]).resolve() if trees else root
-        if (primary_candidate / "objects").is_dir() and not (primary_candidate / ".git").exists():
-            target_root = root
-        else:
-            target_root = primary_candidate
+        target_root = primary_tree(root)
 
     settings = load_settings(target_root)
     layout = get_layout(settings)
@@ -586,9 +720,221 @@ def cmd_adopt(args: argparse.Namespace) -> int:
     )
 
 
+def resolve_sync_conflicts(wt_path: Path, task_id: str, base: str, branch: str, wt_settings: Any) -> None:
+    """Resolve backlog-only conflicts during sync merge in close (Decisions 34, 35)."""
+    if wt_settings.layout not in ("single", "split"):
+        raise TaskError(
+            f"{base} does not merge cleanly into {branch}.\n"
+            f"Resolve conflicts in {wt_path}, commit, and re-run close."
+        )
+
+    conflicted_raw = git("diff", "--name-only", "--diff-filter=U", cwd=wt_path, check=False).splitlines()
+    conflicted_paths = {p.strip().replace("\\", "/") for p in conflicted_raw if p.strip()}
+    if not conflicted_paths:
+        unmerged = git("ls-files", "-u", cwd=wt_path, check=False).strip()
+        if unmerged:
+            raise TaskError(
+                f"{base} does not merge cleanly into {branch}.\n"
+                f"Resolve conflicts in {wt_path}, commit, and re-run close."
+            )
+        return
+
+    if wt_settings.layout == "single":
+        rel_bf = wt_settings.backlog_file.resolve().relative_to(wt_path.resolve()).as_posix()
+        allowed_paths = {rel_bf}
+    else:
+        rel_bd = wt_settings.backlog_dir.resolve().relative_to(wt_path.resolve()).as_posix()
+        allowed_paths = {
+            f"{rel_bd}/Open.md",
+            f"{rel_bd}/Closed.md",
+            f"{rel_bd}/00_BACKLOG.md",
+        }
+
+    if not conflicted_paths.issubset(allowed_paths):
+        raise TaskError(
+            f"{base} does not merge cleanly into {branch}.\n"
+            f"Resolve conflicts in {wt_path}, commit, and re-run close."
+        )
+
+    mb_res = subprocess.run(
+        ["git", "merge-base", "HEAD", "MERGE_HEAD"],
+        cwd=str(wt_path),
+        capture_output=True,
+        text=True,
+    )
+    if mb_res.returncode != 0 or not mb_res.stdout.strip():
+        raise TaskError(
+            f"{base} does not merge cleanly into {branch}.\n"
+            f"Resolve conflicts in {wt_path}, commit, and re-run close."
+        )
+    mb = mb_res.stdout.strip()
+
+    def _norm_tid(tid: str) -> str:
+        return tid.strip().strip("'\"").strip("[]").lstrip("#")
+
+    def _clean_entry_lines(raw: list[str]) -> list[str]:
+        lines = [l.rstrip("\r\n") for l in raw]
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        while lines and not lines[-1].strip():
+            lines.pop()
+        return lines
+
+    def _read_entries_from_ref(ref: str) -> dict[str, tuple[str, list[str]]]:
+        entries: dict[str, tuple[str, list[str]]] = {}
+        if wt_settings.layout == "single":
+            paths_to_read = [rel_bf]
+        else:
+            paths_to_read = [f"{rel_bd}/Open.md", f"{rel_bd}/Closed.md", f"{rel_bd}/00_BACKLOG.md"]
+
+        for rel_p in paths_to_read:
+            proc = subprocess.run(
+                ["git", "show", f"{ref}:{rel_p}"],
+                cwd=str(wt_path),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if proc.returncode == 0 and proc.stdout:
+                lines = split_lines_exact(proc.stdout)
+                for s, e, tid, _ in parse_markdown_entries(lines):
+                    clean_lines = list(lines[s:e])
+                    while clean_lines and not clean_lines[-1].strip():
+                        clean_lines.pop()
+                    entries[_norm_tid(tid)] = (tid, clean_lines)
+        return entries
+
+    head_entries = _read_entries_from_ref("HEAD")
+    mb_entries = _read_entries_from_ref(mb)
+
+    norm_task_id = _norm_tid(task_id)
+
+    # Check if the branch changed any other entry (compare HEAD with merge base)
+    for norm_id, (raw_tid, mb_lines) in mb_entries.items():
+        if norm_id == norm_task_id:
+            continue
+        if norm_id not in head_entries:
+            raise TaskError(
+                f"Branch changed entry [{raw_tid}] not owned by claim [{task_id}].\n"
+                f"Resolve conflicts in {wt_path}, commit, and re-run close."
+            )
+        _, head_lines = head_entries[norm_id]
+        if _clean_entry_lines(mb_lines) != _clean_entry_lines(head_lines):
+            raise TaskError(
+                f"Branch changed entry [{raw_tid}] not owned by claim [{task_id}].\n"
+                f"Resolve conflicts in {wt_path}, commit, and re-run close."
+            )
+
+    if norm_task_id not in head_entries:
+        raise TaskError(f"Task [{task_id}] not found in HEAD of claim branch.")
+
+    _, claimed_entry_lines = head_entries[norm_task_id]
+    new_branch_items = [
+        norm_id for norm_id in head_entries if norm_id != norm_task_id and norm_id not in mb_entries
+    ]
+
+    # Start each conflicted file from the base branch's version (MERGE_HEAD)
+    for p in conflicted_paths:
+        git("checkout", "MERGE_HEAD", "--", p, cwd=wt_path, check=True)
+
+    if wt_settings.layout == "single":
+        text, le, bom, tail = read_text_preserving(wt_settings.backlog_file)
+        lines = split_lines_exact(text[: len(text) - len(tail)] if tail else text) if text else []
+
+        if file_find_entry(lines, task_id):
+            file_extract_entry(lines, task_id)
+
+        claimed_item = item_from_entry_lines(claimed_entry_lines)
+        sections = find_sections(lines)
+        if claimed_item.status == "In Progress":
+            file_insert_entry_at_bottom(lines, sections, claimed_entry_lines, "in progress")
+        elif claimed_item.status == "Open":
+            file_insert_entry_by_priority(lines, sections, claimed_entry_lines)
+        elif claimed_item.status in ("Rejected", "Cancelled"):
+            file_insert_entry_at_bottom(lines, sections, claimed_entry_lines, "icebox")
+        elif claimed_item.status == "Closed":
+            file_insert_entry_at_bottom(lines, sections, claimed_entry_lines, "completed")
+
+        for norm_id in new_branch_items:
+            _, new_lines = head_entries[norm_id]
+            new_item = item_from_entry_lines(new_lines)
+            sections = find_sections(lines)
+            if new_item.status == "Open":
+                file_insert_entry_by_priority(lines, sections, new_lines)
+            elif new_item.status == "In Progress":
+                file_insert_entry_at_bottom(lines, sections, new_lines, "in progress")
+            elif new_item.status in ("Rejected", "Cancelled"):
+                file_insert_entry_at_bottom(lines, sections, new_lines, "icebox")
+            elif new_item.status == "Closed":
+                file_insert_entry_at_bottom(lines, sections, new_lines, "completed")
+
+        write_text_preserving(wt_settings.backlog_file, lines, le, bom, tail=tail)
+        git("add", "--", rel_bf, cwd=wt_path, check=True)
+
+    else:
+        open_file = wt_settings.backlog_dir / "Open.md"
+        closed_file = wt_settings.backlog_dir / "Closed.md"
+
+        o_text, o_le, o_bom, o_tail = read_text_preserving(open_file)
+        open_lines = split_lines_exact(o_text[: len(o_text) - len(o_tail)] if o_tail else o_text) if o_text else []
+        c_text, c_le, c_bom, c_tail = read_text_preserving(closed_file)
+        closed_lines = split_lines_exact(c_text[: len(c_text) - len(c_tail)] if c_tail else c_text) if c_text else []
+
+        if file_find_entry(open_lines, task_id):
+            file_extract_entry(open_lines, task_id)
+        if file_find_entry(closed_lines, task_id):
+            file_extract_entry(closed_lines, task_id)
+
+        claimed_item = item_from_entry_lines(claimed_entry_lines)
+        if claimed_item.status in ("In Progress", "Open"):
+            open_sections = find_sections(open_lines)
+            if claimed_item.status == "In Progress":
+                file_insert_entry_at_bottom(open_lines, open_sections, claimed_entry_lines, "in progress")
+            else:
+                file_insert_entry_by_priority(open_lines, open_sections, claimed_entry_lines)
+        else:
+            closed_sections = find_sections(closed_lines)
+            target_sec = "completed" if claimed_item.status == "Closed" else "icebox"
+            file_insert_entry_at_bottom(closed_lines, closed_sections, claimed_entry_lines, target_sec)
+
+        for norm_id in new_branch_items:
+            _, new_lines = head_entries[norm_id]
+            new_item = item_from_entry_lines(new_lines)
+            if new_item.status in ("In Progress", "Open"):
+                open_sections = find_sections(open_lines)
+                if new_item.status == "Open":
+                    file_insert_entry_by_priority(open_lines, open_sections, new_lines)
+                else:
+                    file_insert_entry_at_bottom(open_lines, open_sections, new_lines, "in progress")
+            else:
+                closed_sections = find_sections(closed_lines)
+                target_sec = "completed" if new_item.status == "Closed" else "icebox"
+                file_insert_entry_at_bottom(closed_lines, closed_sections, new_lines, target_sec)
+
+        write_text_preserving(open_file, open_lines, o_le, o_bom, tail=o_tail)
+        write_text_preserving(closed_file, closed_lines, c_le, c_bom, tail=c_tail)
+        git("add", "--", f"{rel_bd}/Open.md", f"{rel_bd}/Closed.md", cwd=wt_path, check=True)
+        if f"{rel_bd}/00_BACKLOG.md" in conflicted_paths:
+            git("add", "--", f"{rel_bd}/00_BACKLOG.md", cwd=wt_path, check=True)
+
+    # Finish the merge commit
+    proc = subprocess.run(["git", "commit", "--no-edit"], cwd=str(wt_path), capture_output=True, text=True)
+    if proc.returncode != 0:
+        git("merge", "--abort", cwd=wt_path, check=False)
+        err = (proc.stderr or proc.stdout).strip()
+        raise TaskError(f"Merge commit failed:\n{err}")
+
+
 def cmd_close(args: argparse.Namespace) -> int:
     """Record completion, gate, merge to base branch, and tear down worktree."""
     check_no_git_dir_env()
+    outcome = args.outcome.strip() if getattr(args, "outcome", None) else ""
+    if not outcome:
+        raise TaskError("--outcome is required")
+    if "\r" in args.outcome or "\n" in args.outcome:
+        raise TaskError("--outcome cannot contain newlines")
+
     cwd = Path.cwd()
     root = repo_root(cwd)
     settings = load_settings(root)
@@ -601,13 +947,12 @@ def cmd_close(args: argparse.Namespace) -> int:
     if not git_ok("show-ref", "--verify", "--quiet", f"refs/heads/{base}", cwd=root):
         raise TaskError(f"base branch '{base}' not found; set backlog.baseBranch")
 
-    # F9: Primary tree must be on the base branch
-    trees = worktree_list(root)
-    primary_tree = trees[0]
-    primary_path = Path(primary_tree["path"]).resolve()
-    primary_branch = primary_tree.get("branch")
+    # Decision 27 / F9: Primary tree must be found via primary_tree(root) and be on base branch
+    primary_path = primary_tree(root)
+    primary_branch = git("branch", "--show-current", cwd=primary_path, check=False).strip()
     if primary_branch != base:
         raise TaskError(f"Primary tree {primary_path} is on branch '{primary_branch}', expected base branch '{base}'.")
+    trees = worktree_list(root)
 
     if not branch_exists(branch, cwd=root):
         raise TaskError(f"Task [{task_id}] is not claimed (branch {branch} does not exist).")
@@ -652,31 +997,31 @@ def cmd_close(args: argparse.Namespace) -> int:
     if not item:
         raise TaskError(f"Task [{task_id}] not found in worktree backlog.")
 
-    # F2: If worktree item is already Closed, skip item update and commit
+    # Decision 34: Unless the item is already Closed on the branch (F2), sync base into claim worktree
     if item.status != "Closed":
+        # Step 2: Sync base branch into worktree
+        merged = subprocess.run(
+            ["git", "merge", base, "-m", f"{clean_id}: sync with {base}"],
+            cwd=str(wt_path),
+            capture_output=True,
+            text=True,
+        )
+        if merged.returncode != 0:
+            unmerged = git("ls-files", "-u", cwd=wt_path, check=False).strip()
+            if unmerged:
+                resolve_sync_conflicts(wt_path, task_id, base, branch, wt_settings)
+            else:
+                git("merge", "--abort", cwd=wt_path, check=False)
+                err = (merged.stderr or merged.stdout).strip()
+                raise TaskError(f"Sync merge of {base} into {branch} failed:\n{err}")
+
+        # Step 3: The close write and its commit, on the merged tree
+        wt_layout_merged = get_layout(wt_settings)
         def do_close():
-            return wt_layout.close(task_id, "Closed", args.outcome.strip())
+            return wt_layout_merged.close(task_id, "Closed", args.outcome.strip())
 
         summary = f"chore(backlog): close [{task_id}]"[:72]
-        safe_commit(wt_path, summary, wt_layout.paths_for(task_id), do_close)
-
-    # Sync base branch into worktree
-    merged = subprocess.run(
-        ["git", "merge", base, "-m", f"{clean_id}: sync with {base}"],
-        cwd=str(wt_path),
-        capture_output=True,
-        text=True,
-    )
-    if merged.returncode != 0:
-        unmerged = git("ls-files", "-u", cwd=wt_path, check=False).strip()
-        if unmerged:
-            raise TaskError(
-                f"{base} does not merge cleanly into {branch}.\n"
-                f"Resolve conflicts in {wt_path}, commit, and re-run close."
-            )
-        git("merge", "--abort", cwd=wt_path, check=False)
-        err = (merged.stderr or merged.stdout).strip()
-        raise TaskError(f"Sync merge of {base} into {branch} failed:\n{err}")
+        safe_commit(wt_path, summary, wt_layout_merged.paths_for(task_id), do_close)
 
     # Atomic merge under lock in primary tree
     lock_file = git_dir(primary_path) / "merge.lock"
@@ -780,3 +1125,412 @@ def cmd_abandon(args: argparse.Namespace) -> int:
     git("branch", "-D", branch, cwd=root)
     print(f"Abandoned claim [{task_id}] (deleted branch {branch}).")
     return 0
+
+
+def _handle_reject_or_cancel(args: argparse.Namespace, new_status: str) -> int:
+    check_no_git_dir_env()
+    reason = args.reason.strip() if getattr(args, "reason", None) else ""
+    if not reason:
+        raise TaskError(f"--reason is required for {new_status.lower()}")
+    if "\r" in args.reason or "\n" in args.reason:
+        raise TaskError("--reason cannot contain newlines")
+
+    cwd = Path.cwd()
+    root = repo_root(cwd)
+    settings = load_settings(root)
+    base = settings.base_branch
+
+    # F5: check base branch exists at the start
+    if not git_ok("show-ref", "--verify", "--quiet", f"refs/heads/{base}", cwd=root):
+        raise TaskError(f"base branch '{base}' not found; set backlog.baseBranch")
+
+    # Decision 27: Written in primary tree
+    primary_path = primary_tree(root)
+
+    # F9: Primary tree must be on the base branch
+    primary_branch = git("branch", "--show-current", cwd=primary_path, check=False).strip()
+    if primary_branch != base:
+        raise TaskError(f"Primary tree {primary_path} is on branch '{primary_branch}', expected base branch '{base}'.")
+
+    task_id = args.id.strip().strip("'\"").strip("[]")
+    clean_id = task_id.lstrip("#")
+    branch = f"{BRANCH_PREFIX}{clean_id}"
+
+    # Decision 29: The item must have no claim/<ID> branch
+    if branch_exists(branch, cwd=root):
+        raise TaskError(f"[{task_id}] is claimed; abandon or close the claim first")
+
+    primary_settings = load_settings(primary_path)
+    primary_layout = get_layout(primary_settings)
+    item = primary_layout.find(task_id)
+    if not item:
+        raise TaskError(f"Task [{task_id}] not found in backlog on branch '{base}'.")
+
+    # Decision 29: The item must be Open
+    if item.status != "Open":
+        raise TaskError(f"[{task_id}] is {item.status}; only Open items can be rejected or cancelled")
+
+    # Dependents (convention §4.6, Decision 36):
+    # Separate unclaimed dependents (noted on main in the main commit)
+    # from claimed dependents (noted in their claim worktrees after the main commit).
+    unclaimed_dependents: list[Item] = []
+    claimed_dependents: list[Item] = []
+    for it in primary_layout.items():
+        if it.status in ("Open", "In Progress") and not id_matches(it.id, item.id):
+            deps = it.fields.get("depends_on", [])
+            if any(id_matches(d, item.id) for d in deps):
+                dep_clean_id = it.id.lstrip("#").strip("[]")
+                dep_branch = f"{BRANCH_PREFIX}{dep_clean_id}"
+                if branch_exists(dep_branch, cwd=root):
+                    claimed_dependents.append(it)
+                else:
+                    unclaimed_dependents.append(it)
+
+    # Warning for items on claim branches (Decision 29, Decision 39)
+    for cb in claim_branches(root):
+        branch_items = find_all_items_on_branch(root, cb, primary_settings)
+        for cb_item in branch_items:
+            deps = cb_item.fields.get("depends_on", [])
+            if any(id_matches(d, item.id) for d in deps):
+                if not primary_layout.find(cb_item.id):
+                    print(f"Warning: item [{cb_item.id}] on branch {cb} depends on [{item.id}]")
+
+    verb = "rejected" if new_status == "Rejected" else "cancelled"
+    dep_note = (
+        f"Depends on [{item.id}], which was {verb}: {reason}. "
+        "Check whether this item is still blocked or needs rethinking."
+    )
+
+    pre_paths = set(primary_layout.paths_for(item.id))
+    for dep in unclaimed_dependents:
+        pre_paths.update(primary_layout.paths_for(dep.id))
+
+    def do_action():
+        written_paths = []
+        all_moves = []
+        w_paths, moves = primary_layout.close(item.id, new_status, reason)
+        written_paths.extend(w_paths)
+        all_moves.extend(moves)
+        for dep in unclaimed_dependents:
+            w_paths, moves = primary_layout.append_note(dep.id, dep_note)
+            written_paths.extend(w_paths)
+            all_moves.extend(moves)
+        return written_paths, all_moves
+
+    action_verb = "reject" if new_status == "Rejected" else "cancel"
+    commit_msg = f"chore(backlog): {action_verb} [{item.id}]"[:72]
+    safe_commit(primary_path, commit_msg, list(pre_paths), do_action)
+
+    # Decision 36: While an item is claimed, only its claim branch edits its entry.
+    # Note claimed dependents in their worktrees after the main commit has succeeded.
+    trees = worktree_list(root)
+    for dep in claimed_dependents:
+        dep_clean_id = dep.id.lstrip("#").strip("[]")
+        dep_branch = f"{BRANCH_PREFIX}{dep_clean_id}"
+        wt_path = None
+        for t in trees:
+            if t["branch"] == dep_branch:
+                wt_path = Path(t["path"]).resolve()
+                break
+
+        cmd_hint = f"python task.py amend '{dep.id}' --note '{dep_note}'"
+        if not wt_path or not wt_path.is_dir():
+            print(f"Warning: claimed dependent [{dep.id}] has no worktree. Run instead:\n  {cmd_hint}")
+        else:
+            try:
+                wt_settings = load_settings(wt_path)
+                wt_layout = get_layout(wt_settings)
+                def do_dep_note():
+                    return wt_layout.append_note(dep.id, dep_note)
+
+                dep_commit_msg = f"chore(backlog): note [{dep.id}]"[:72]
+                safe_commit(wt_path, dep_commit_msg, wt_layout.paths_for(dep.id), do_dep_note)
+            except Exception as exc:
+                print(f"Warning: could not update claimed dependent [{dep.id}]: {exc}\nRun instead:\n  {cmd_hint}")
+
+    print(f"{new_status} [{item.id}]: {reason}")
+    return 0
+
+
+def cmd_reject(args: argparse.Namespace) -> int:
+    """Reject an open backlog task with a reason (Decision 29)."""
+    return _handle_reject_or_cancel(args, "Rejected")
+
+
+def cmd_cancel(args: argparse.Namespace) -> int:
+    """Cancel an open backlog task with a reason (Decision 29)."""
+    return _handle_reject_or_cancel(args, "Cancelled")
+
+
+def cmd_amend(args: argparse.Namespace) -> int:
+    """Amend a backlog task with notes or priority updates (Decision 30)."""
+    check_no_git_dir_env()
+    if getattr(args, "note", None) is not None and ("\r" in args.note or "\n" in args.note):
+        raise TaskError("--note cannot contain newlines")
+    task_id = args.id.strip().strip("'\"").strip("[]")
+    note = args.note.strip() if getattr(args, "note", None) else None
+    priority = args.priority.upper() if getattr(args, "priority", None) else None
+
+    if not note and not priority:
+        raise TaskError("amend requires at least one of --note or --priority")
+
+    if priority and not note:
+        raise TaskError("--priority requires --note with the reason")
+
+    if priority and priority not in PRIORITY_LEVELS:
+        raise TaskError(f"Invalid priority {priority!r}. Must be one of {PRIORITY_LEVELS}")
+
+    cwd = Path.cwd()
+    root = repo_root(cwd)
+    settings = load_settings(root)
+    base = settings.base_branch
+
+    # F5: base branch must exist
+    if not git_ok("show-ref", "--verify", "--quiet", f"refs/heads/{base}", cwd=root):
+        raise TaskError(f"base branch '{base}' not found; set backlog.baseBranch")
+
+    clean_id = task_id.lstrip("#")
+    branch = f"{BRANCH_PREFIX}{clean_id}"
+
+    # Where to write (Decision 30):
+    if branch_exists(branch, cwd=root):
+        wt_path = None
+        for t in worktree_list(root):
+            if t["branch"] == branch:
+                wt_path = Path(t["path"]).resolve()
+                break
+        if not wt_path or not wt_path.is_dir():
+            raise TaskError(f"run adopt '{task_id}' first")
+        target_tree = wt_path
+    else:
+        primary_path = primary_tree(root)
+        primary_branch = git("branch", "--show-current", cwd=primary_path, check=False).strip()
+        if primary_branch != base:
+            raise TaskError(f"Primary tree {primary_path} is on branch '{primary_branch}', expected base branch '{base}'.")
+        target_tree = primary_path
+
+    target_settings = load_settings(target_tree)
+    target_layout = get_layout(target_settings)
+    item = target_layout.find(task_id)
+    if not item:
+        raise TaskError(f"Task [{task_id}] not found in backlog at {target_tree}.")
+
+    if item.status in ("Closed", "Rejected", "Cancelled"):
+        raise TaskError(f"[{item.id}] is {item.status}; only open or in-progress items can be amended")
+
+    if priority and item.priority == priority:
+        raise TaskError(f"[{item.id}] is already {priority}")
+
+    commit_msg = f"chore(backlog): amend [{item.id}]"[:72]
+    pre_paths = target_layout.paths_for(item.id)
+
+    def do_amend():
+        written_paths = []
+        all_moves = []
+        if priority:
+            old_prio = item.priority
+            w_paths, moves = target_layout.set_priority(item.id, priority)
+            written_paths.extend(w_paths)
+            all_moves.extend(moves)
+            note_content = f"priority {old_prio} → {priority}: {note}"
+        else:
+            note_content = note
+
+        w_paths, moves = target_layout.append_note(item.id, note_content)
+        written_paths.extend(w_paths)
+        all_moves.extend(moves)
+        return written_paths, all_moves
+
+    safe_commit(target_tree, commit_msg, pre_paths, do_amend)
+    print(f"Amended [{item.id}]")
+    return 0
+
+
+def select_list_items(
+    items: list[Item],
+    claims: list[str],
+    status_filter: str | None = None,
+    priority_filter: str | None = None,
+    is_folders_layout: bool = False,
+) -> list[tuple[int, str, Any, Item, str, str]]:
+    """Pure selection and sorting function for backlog list (Decision 31, Decision 43)."""
+    valid_statuses = {"open", "in progress", "in-progress", "closed", "completed", "rejected", "cancelled", "all"}
+    if status_filter:
+        if status_filter.lower() not in valid_statuses:
+            raise TaskError(
+                f"Invalid status {status_filter!r}. Must be one of: Open, In Progress, Closed, Rejected, Cancelled, all"
+            )
+
+    valid_priorities = {"P1", "P2", "P3"}
+    if priority_filter:
+        if priority_filter.upper() not in valid_priorities:
+            raise TaskError(
+                f"Invalid priority {priority_filter!r}. Must be one of: P1, P2, P3"
+            )
+        priority_filter = priority_filter.upper()
+
+    matched_entries = []
+
+    for idx, item in enumerate(items):
+        claim_match = None
+        for branch in claims:
+            branch_id = branch[len(BRANCH_PREFIX) :]
+            if id_matches(item.id, branch_id):
+                claim_match = branch
+                break
+
+        if claim_match:
+            display_status = f"In Progress ({claim_match})"
+        else:
+            display_status = item.status
+
+        # Priority filter
+        if priority_filter:
+            if (item.priority or "").upper() != priority_filter:
+                continue
+
+        # Status filter
+        if status_filter:
+            if status_filter.lower() == "all":
+                pass
+            elif status_filter.lower() in ("in progress", "in-progress"):
+                if not display_status.startswith("In Progress"):
+                    continue
+            elif status_filter.lower() in ("closed", "completed"):
+                if display_status not in ("Closed", "Completed"):
+                    continue
+            else:
+                if display_status.lower() != status_filter.lower():
+                    continue
+        else:
+            # Default: Open and In Progress
+            if display_status != "Open" and not display_status.startswith("In Progress"):
+                continue
+
+        prio_rank = {"P1": 1, "P2": 2, "P3": 3}.get((item.priority or "").upper(), 99)
+        created = item.fields.get("created") or ""
+        sort_created = created if created else "9999-99-99"
+
+        if is_folders_layout:
+            pos = item.path.name if item.path else item.id
+        else:
+            pos = idx
+
+        matched_entries.append((prio_rank, sort_created, pos, item, display_status, created))
+
+    matched_entries.sort(key=lambda x: (x[0], x[1], x[2]))
+    return matched_entries
+
+
+def select_next_item(
+    items: list[Item],
+    claims: list[str],
+    is_folders_layout: bool = False,
+) -> tuple[Item | None, int]:
+    """Pure selection function for next ready item (Decision 32, Decision 43)."""
+    ready_items = []
+    blocked_count = 0
+
+    for idx, item in enumerate(items):
+        if item.status != "Open":
+            continue
+
+        is_claimed = False
+        for branch in claims:
+            branch_id = branch[len(BRANCH_PREFIX) :]
+            if id_matches(item.id, branch_id):
+                is_claimed = True
+                break
+
+        if is_claimed:
+            continue
+
+        deps = item.fields.get("depends_on", [])
+        is_blocked = False
+        if deps:
+            for dep_id in deps:
+                dep_item = next((it for it in items if id_matches(it.id, dep_id)), None)
+                if not dep_item or dep_item.status not in ("Closed", "Completed"):
+                    is_blocked = True
+                    break
+
+        if is_blocked:
+            blocked_count += 1
+        else:
+            prio_rank = {"P1": 1, "P2": 2, "P3": 3}.get((item.priority or "").upper(), 99)
+            created = item.fields.get("created") or ""
+            sort_created = created if created else "9999-99-99"
+            if is_folders_layout:
+                pos = item.path.name if item.path else item.id
+            else:
+                pos = idx
+            ready_items.append((prio_rank, sort_created, pos, item, created))
+
+    if not ready_items:
+        return None, blocked_count
+
+    ready_items.sort(key=lambda x: (x[0], x[1], x[2]))
+    return ready_items[0][3], blocked_count
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    """List backlog items with optional status and priority filtering (Decision 31)."""
+    cwd = Path.cwd()
+    root = repo_root(cwd)
+    primary_path = primary_tree(root)
+    primary_settings = load_settings(primary_path)
+    primary_layout = get_layout(primary_settings)
+
+    claims = claim_branches(root)
+    items = primary_layout.items()
+
+    status_filter = args.status.strip() if getattr(args, "status", None) and args.status else None
+    priority_filter = args.priority.strip().upper() if getattr(args, "priority", None) and args.priority else None
+
+    matched_entries = select_list_items(
+        items,
+        claims,
+        status_filter=status_filter,
+        priority_filter=priority_filter,
+        is_folders_layout=(primary_settings.layout == "folders"),
+    )
+
+    if not matched_entries:
+        print("No items.")
+        return 0
+
+    for _, _, _, item, disp_status, created in matched_entries:
+        print(f"{item.id}\t{item.priority or ''}\t{disp_status}\t{created}\t{item.title}")
+
+    return 0
+
+
+def cmd_next(args: argparse.Namespace) -> int:
+    """Find and display the highest-priority ready backlog item (Decision 32)."""
+    cwd = Path.cwd()
+    root = repo_root(cwd)
+    primary_path = primary_tree(root)
+    primary_settings = load_settings(primary_path)
+    primary_layout = get_layout(primary_settings)
+
+    claims = claim_branches(root)
+    items = primary_layout.items()
+
+    best, blocked_count = select_next_item(
+        items,
+        claims,
+        is_folders_layout=(primary_settings.layout == "folders"),
+    )
+
+    if not best:
+        print(f"No ready item. {blocked_count} open item{'s' if blocked_count != 1 else ''} {'is' if blocked_count == 1 else 'are'} blocked.")
+        return 0
+
+    created = best.fields.get("created") or ""
+    created_str = created if created else "unknown"
+    prio_str = best.priority or "P2"
+    print(f"[{best.id}] {best.title} ({prio_str}, created {created_str})")
+    print(f"claim it with: python task.py claim '{best.id}'")
+    return 0
+
+

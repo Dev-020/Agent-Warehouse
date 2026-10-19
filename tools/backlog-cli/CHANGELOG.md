@@ -11,8 +11,16 @@
 - Task ID allocation across branches: collects IDs across target tree, base branch tip, and all active `claim/*` branches without checkout (Decision 23, D1).
 - `abandon` checks for commits on the branch not on base; prints tip hash and restoration instructions under `--force` (Decision 24, D2, S10).
 - `doctor` reports git discovery mechanism (`.git folder`, `.git pointer file -> <git dir>`, or `GIT_DIR/GIT_WORK_TREE environment`) (Decision 26).
+- Commands `reject` and `cancel` (`--reason`) to close tasks that won't be done, moving them to the bottom of the Icebox or `closed/`, and adding notes to any dependent items in the same commit (Decision 29).
+- Command `amend` (`--note`, `--priority`) to add dated notes and/or change priority, moving open items to their priority position in single/split layouts, writing to the claim worktree if claimed, and refusing changes on closed items (Decision 30).
+- `Item.fields` populates metadata: `severity`, `likelihood`, `depends_on` (list), `parent`, and `resolved`, with normalized IDs (Decision 28).
+- `primary_tree` discovery logic, and `doctor` reports `main tree: <path>` or `main tree: unknown from here (run from the main tree)` (Decision 27).
+- Command `list` (`--status`, `--priority`) to output tab-separated items sorted by priority, created date, and position/name, with live claim overlay (Decision 31).
+- Command `next` to find the highest-priority ready item with claim instructions, or report the count of blocked open items when none are ready (Decision 32).
 
 ### Changed
+- `close` syncs with base branch before writing the close commit, automatically resolving backlog-only merge conflicts for single and split layouts (Decisions 34, 35).
+- While an item is claimed, `reject` and `cancel` route dependent notes to the claim worktree after the main commit rather than editing claimed entries on main (Decision 36).
 - Split `task.py` into internal `backlog_cli` package (`gitops`, `settings`, `ids`, `layouts`, `commands`, `model`).
 - Core commands (`open`, `claim`, `close`, `abandon`, `adopt`, `status`) operate polymorphically across all three layouts.
 - `claim` refuses before creating a branch if the target item does not exist or is not `Open`.
@@ -45,11 +53,19 @@
 - F10: labels on markdown entry status lines format per convention §4.5 as ``**Labels**: `Bug`, `UI` ``, and reader returns every label.
 - F12: items with slugless titles use slug `item` (`<ID>-item.md`), and branch scans recognize `<ID>-`, `<ID>.md`, and `<ID>/` formats so IDs are not re-allocated.
 - F13: folder branch scans read frontmatter `id` via `git cat-file --batch`, ensuring imported IDs (`ISS-20260917-slug`) classify as `other` and do not break sequential allocation.
+- F16: in repositories whose git folder is outside the tree (`.git` pointer file), commands requiring the primary tree refuse with a clear message when run from linked worktrees where the primary tree is unknown (Decision 27).
+- B1: `reject`, `cancel`, and `close` verify folder items are completely clean including untracked files before moving, refusing and naming uncommitted files (Decision 37).
+- S1: `primary_tree` resolves `.git` pointer files pointing directly to the common git dir as primary, and prevents external git store directories from being misidentified as worktrees (Decision 38).
+- S2: `reject` and `cancel` scan all items across active claim branches to warn about branch-only dependents missing from the primary tree (Decision 39).
+- S3: frontmatter parser and updater support YAML block lists for `depends_on` and `labels` (Decision 40).
+- S4: commands refuse `\r` and `\n` in single-line values (title, `--criterion`, `--note`, `--reason`, `--outcome`, `--labels`) and refuse leading `#` lines in `--why` and `--wanted` to prevent forged backlog entries (Decision 41).
+- N1–N4: `next` excludes claimed items from the blocked count; metadata parser stops at the first non-bold-bullet line; `normalize_id` strips backticks; `list` validates `--status` and `--priority` inputs against allowed values (Decision 42).
 
 ### Removed
 - Fallback to `BACKLOG/Open.md` when `BACKLOG.md` is missing (a project sets `backlog_layout`).
 - Legacy `- [ ] **ID**` heading format in single and split layouts in favor of `### [ID] Title`.
 - Placeholder acceptance criterion `[ ] #1 (criterion)` when none provided.
+- Stale `status [--write]` reference in `task.py` CLI usage docstring (Decision 33).
 
 ## [0.1.0] - 2026-09-15
 ### Added

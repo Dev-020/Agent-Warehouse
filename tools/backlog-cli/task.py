@@ -7,12 +7,17 @@ conflict avoidance, and lifecycle transitions.
 
 Usage:
     python task.py doctor [--init]
-    python task.py status [--write]
+    python task.py status
     python task.py open "Task title" [--prefix INF] [--priority P2] [--claim]
     python task.py claim <ID>
     python task.py adopt <ID>
     python task.py close <ID> --outcome "Summary of implementation"
     python task.py abandon <ID> [--force]
+    python task.py reject <ID> --reason "Reason for rejection"
+    python task.py cancel <ID> --reason "Reason for cancellation"
+    python task.py amend <ID> [--note "Note text"] [--priority P1|P2|P3]
+    python task.py list [--status S] [--priority P]
+    python task.py next
 """
 
 from __future__ import annotations
@@ -24,10 +29,15 @@ from backlog_cli import TaskError
 from backlog_cli.commands import (
     cmd_abandon,
     cmd_adopt,
+    cmd_amend,
+    cmd_cancel,
     cmd_claim,
     cmd_close,
     cmd_doctor,
+    cmd_list,
+    cmd_next,
     cmd_open,
+    cmd_reject,
     cmd_status,
 )
 
@@ -82,6 +92,35 @@ def main(argv: list[str] | None = None) -> int:
     p_aban.add_argument("--force", action="store_true", help="Discard uncommitted changes")
     p_aban.set_defaults(func=cmd_abandon)
 
+    # reject
+    p_rej = sub.add_parser("reject", help="Reject an open backlog item with a reason")
+    p_rej.add_argument("id", help="Task ID to reject")
+    p_rej.add_argument("--reason", required=True, help="Reason for rejection")
+    p_rej.set_defaults(func=cmd_reject)
+
+    # cancel
+    p_cnc = sub.add_parser("cancel", help="Cancel an open backlog item with a reason")
+    p_cnc.add_argument("id", help="Task ID to cancel")
+    p_cnc.add_argument("--reason", required=True, help="Reason for cancellation")
+    p_cnc.set_defaults(func=cmd_cancel)
+
+    # amend
+    p_amd = sub.add_parser("amend", help="Amend an item's notes or priority")
+    p_amd.add_argument("id", help="Task ID to amend")
+    p_amd.add_argument("--note", default=None, help="Dated note text")
+    p_amd.add_argument("--priority", default=None, help="New priority (P1 | P2 | P3)")
+    p_amd.set_defaults(func=cmd_amend)
+
+    # list
+    p_list = sub.add_parser("list", help="List backlog items with optional status and priority filters")
+    p_list.add_argument("--status", default=None, help="Filter by status (or 'all')")
+    p_list.add_argument("--priority", default=None, help="Filter by priority (P1 | P2 | P3)")
+    p_list.set_defaults(func=cmd_list)
+
+    # next
+    p_nxt = sub.add_parser("next", help="Find and display the highest-priority ready item")
+    p_nxt.set_defaults(func=cmd_next)
+
     args = parser.parse_args(argv)
     try:
         return args.func(args)
@@ -92,3 +131,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
