@@ -17,6 +17,7 @@
 - `primary_tree` discovery logic, and `doctor` reports `main tree: <path>` or `main tree: unknown from here (run from the main tree)` (Decision 27).
 - Command `list` (`--status`, `--priority`) to output tab-separated items sorted by priority, created date, and position/name, with live claim overlay (Decision 31).
 - Command `next` to find the highest-priority ready item with claim instructions, or report the count of blocked open items when none are ready (Decision 32).
+- Pre-merge check in `close`: blocks on new duplicate IDs introduced by the branch (naming every copy across files or item paths), and warns on unticked acceptance criteria for full entries (Decision 44, S4, D7).
 
 ### Changed
 - `close` syncs with base branch before writing the close commit, automatically resolving backlog-only merge conflicts for single and split layouts (Decisions 34, 35).

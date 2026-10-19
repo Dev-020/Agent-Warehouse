@@ -52,6 +52,7 @@ from backlog_cli.layouts import (
     split_lines_exact,
     write_text_preserving,
 )
+from backlog_cli.check import run_pre_merge_check
 from backlog_cli.model import Item
 from backlog_cli.settings import load_settings
 
@@ -1022,6 +1023,9 @@ def cmd_close(args: argparse.Namespace) -> int:
 
         summary = f"chore(backlog): close [{task_id}]"[:72]
         safe_commit(wt_path, summary, wt_layout_merged.paths_for(task_id), do_close)
+
+    # Pre-merge check (Decision 44): duplicate IDs and unticked criteria
+    run_pre_merge_check(primary_path, wt_path, task_id, base, branch, wt_settings)
 
     # Atomic merge under lock in primary tree
     lock_file = git_dir(primary_path) / "merge.lock"
