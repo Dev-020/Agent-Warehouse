@@ -195,17 +195,9 @@ def worktree_list(cwd: str | Path | None = None) -> list[dict[str, str]]:
 
 
 def primary_tree(cwd: str | Path | None = None) -> Path:
-    """Return the primary working tree path adhering to Decision 27 (F16)."""
+    """Return the primary working tree path adhering to Decision 27 (F16) and Decision 38 (S1)."""
     root = repo_root(cwd)
-    trees = worktree_list(root)
-    if not trees:
-        return root
-
-    first_path = Path(trees[0]["path"]).resolve()
-    is_git_folder = (first_path / "objects").is_dir() and not (first_path / ".git").exists()
-
-    if not is_git_folder:
-        return first_path
+    common_dir = git_dir(root).resolve()
 
     dot_git = root / ".git"
     if dot_git.is_file():
@@ -213,10 +205,28 @@ def primary_tree(cwd: str | Path | None = None) -> Path:
             text = dot_git.read_text(encoding="utf-8", errors="replace").strip()
             if text.startswith("gitdir:"):
                 target = (root / text.split(":", 1)[1].strip()).resolve()
-                if target == first_path:
+                if target == common_dir:
                     return root
         except Exception:
             pass
+
+    trees = worktree_list(root)
+    if not trees:
+        return root
+
+    first_path = Path(trees[0]["path"]).resolve()
+    is_git_folder = (
+        first_path == common_dir
+        or first_path.name == ".git"
+        or ((first_path / "objects").is_dir() and not (first_path / ".git").exists())
+    )
+    if not is_git_folder and (first_path / ".git").resolve() == common_dir:
+        entries = [p for p in first_path.iterdir() if p.name != ".git"]
+        if not entries:
+            is_git_folder = True
+
+    if not is_git_folder:
+        return first_path
 
     raise TaskError(
         "This repository's git folder is outside the tree, and git doesn't record "
@@ -343,6 +353,10 @@ class Restorable:
         for p in self.paths:
             if p.is_file():
                 self.saved[p] = p.read_bytes()
+            elif p.is_dir():
+                for sub in p.rglob("*"):
+                    if sub.is_file():
+                        self.saved[sub] = sub.read_bytes()
         return self
 
     def __exit__(self, exc_type, exc, tb):

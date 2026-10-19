@@ -250,3 +250,24 @@ def test_pointer_file_primary_tree_f16(tmp_path: Path, run_cli):
     assert "Created backlog item [#004]" in res_open_claim.output
     assert "[#004] Child task in claim" in (wt2 / "BACKLOG.md").read_text(encoding="utf-8")
 
+
+def test_primary_tree_separate_git_dir_pointer(tmp_path: Path):
+    """Decision 38 (S1): primary_tree returns main tree when .git is a pointer file resolving to common dir."""
+    from backlog_cli.gitops import primary_tree
+
+    work = tmp_path / "repo"
+    store = tmp_path / "store"
+    store.mkdir()
+    subprocess.run(
+        ["git", "init", "-q", "-b", "main", f"--separate-git-dir={(store / '.git').as_posix()}", str(work)],
+        check=True,
+    )
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=str(work), check=True)
+    subprocess.run(["git", "config", "user.email", "tester@example.com"], cwd=str(work), check=True)
+    (work / "README.md").write_text("# Test\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=str(work), check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=str(work), check=True)
+
+    pt = primary_tree(work)
+    assert pt.resolve() == work.resolve()
+

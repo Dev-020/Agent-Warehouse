@@ -20,8 +20,8 @@ PRIORITY_RANK = {"P1": 1, "P2": 2, "P3": 3}
 
 
 def normalize_id(raw_id: str) -> str:
-    """Normalize task ID the way id_matches compares them (Decision 28)."""
-    clean = raw_id.strip().strip("'\"").strip("[]")
+    """Normalize task ID the way id_matches compares them (Decision 28, Decision 42)."""
+    clean = raw_id.strip().strip("'\"`").strip("[]").strip("'\"`")
     if clean.startswith("#"):
         return clean
     if clean.isdigit():
@@ -334,8 +334,7 @@ def item_from_entry_lines(
                     if m_pt:
                         fields["parent"] = normalize_id(m_pt.group(1).strip())
         else:
-            if line.strip():
-                metadata_done = True
+            metadata_done = True
             body_lines.append(line)
 
     fields = normalize_item_fields(fields)
@@ -416,19 +415,50 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], str, str]:
         return {}, text, ""
 
     fields: dict[str, Any] = {}
-    for line in lines[1:end_idx]:
+    i = 1
+    while i < end_idx:
+        line = lines[i]
         sline = line.strip()
         if not sline or sline.startswith("#"):
+            i += 1
             continue
-        if ":" in sline:
+        if ":" in sline and not line.startswith((" ", "\t", "-")):
             k, _, v = sline.partition(":")
             k = k.strip()
             v = v.strip()
-            if v.startswith("[") and v.endswith("]"):
+            if not v:
+                items = []
+                j = i + 1
+                while j < end_idx:
+                    next_line = lines[j]
+                    next_s = next_line.strip()
+                    if not next_s:
+                        j += 1
+                        continue
+                    if next_line.startswith((" ", "\t")) and next_s.startswith("- "):
+                        val = next_s[2:].strip()
+                        items.append(unescape_yaml_string(val))
+                        j += 1
+                    else:
+                        break
+                if items or k in ("depends_on", "labels"):
+                    fields[k] = items
+                    i = j
+                    continue
+                else:
+                    fields[k] = ""
+                    i += 1
+                    continue
+            elif v.startswith("[") and v.endswith("]"):
                 items = [unescape_yaml_string(x.strip()) for x in v[1:-1].split(",") if x.strip()]
                 fields[k] = items
+                i += 1
+                continue
             else:
                 fields[k] = unescape_yaml_string(v)
+                i += 1
+                continue
+        i += 1
 
     body = "".join(lines[end_idx + 1 :])
     raw_fm = "".join(lines[: end_idx + 1])
@@ -452,10 +482,12 @@ def update_frontmatter(text: str, updates: dict[str, Any]) -> str:
     remaining = dict(updates)
     new_fm_lines: list[str] = []
 
-    for line in lines[1:end_idx]:
+    i = 1
+    while i < end_idx:
+        line = lines[i]
         sline = line.strip()
         matched = None
-        if ":" in sline:
+        if ":" in sline and not line.startswith((" ", "\t", "-")):
             k = sline.split(":", 1)[0].strip()
             if k in remaining:
                 matched = k
@@ -463,8 +495,17 @@ def update_frontmatter(text: str, updates: dict[str, Any]) -> str:
             val = remaining.pop(matched)
             formatted = format_yaml_value(matched, val)
             new_fm_lines.append(f"{matched}: {formatted}{le}")
+            j = i + 1
+            while j < end_idx:
+                next_l = lines[j]
+                if next_l.startswith((" ", "\t")) and next_l.strip().startswith("- "):
+                    j += 1
+                else:
+                    break
+            i = j
         else:
             new_fm_lines.append(line)
+            i += 1
 
     for k, val in remaining.items():
         formatted = format_yaml_value(k, val)
@@ -1071,6 +1112,8 @@ class ItemFoldersLayout(BaseLayout):
         if task_id:
             it = self.find(task_id)
             if it and it.path:
+                if it.path.parent not in (self.open_dir, self.closed_dir):
+                    return [it.path.parent]
                 return [it.path]
         return [self.open_dir, self.closed_dir]
 

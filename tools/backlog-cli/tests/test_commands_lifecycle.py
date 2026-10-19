@@ -404,3 +404,64 @@ def test_claimed_dependent_warning_when_no_worktree(tmp_path: Path, run_cli):
     assert res_rej.exit_code == 0
     assert "Warning: claimed dependent [#002] has no worktree" in res_rej.output
     assert "python task.py amend '#002' --note 'Depends on [#001], which was rejected: cancelled feature." in res_rej.output
+
+
+def test_reject_folder_item_uncommitted_files_refuses(tmp_path: Path, run_cli):
+    """Decision 37 (B1): reject refuses if folder item has uncommitted edits or untracked files."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_folder_dirty", layout="folders")
+    run_cli(repo, "open", "Alpha")
+    o = repo / "BACKLOG" / "open"
+    f = next(o.glob("001-*.md"))
+    folder = o / f.stem
+    folder.mkdir()
+    f.rename(folder / f.name)
+    (folder / "plan.md").write_text("committed plan\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-qm", "item becomes a folder"], cwd=str(repo), check=True)
+
+    # Add uncommitted edit and untracked file inside folder
+    (folder / "plan.md").write_text("UNCOMMITTED edit\n", encoding="utf-8")
+    (folder / "scratch.txt").write_text("untracked\n", encoding="utf-8")
+
+    # Reject must refuse
+    res_rej = run_cli(repo, "reject", "#001", "--reason", "no")
+    assert res_rej.exit_code != 0
+    assert "uncommitted changes in target paths" in res_rej.output
+    assert "plan.md" in res_rej.output
+
+    # Clean untracked and commit edit
+    (folder / "scratch.txt").unlink()
+    subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-qm", "commit edits"], cwd=str(repo), check=True)
+
+    # Now reject succeeds
+    res_ok = run_cli(repo, "reject", "#001", "--reason", "no")
+    assert res_ok.exit_code == 0
+    assert (repo / "BACKLOG" / "closed" / folder.name / "plan.md").exists()
+
+
+def test_reject_warns_all_branch_dependents_missing_from_primary(tmp_path: Path, run_cli):
+    """Decision 39 (S2): reject warns about items on any claim branch that depend on rejected ID."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_warn_branch", layout="single")
+    run_cli(repo, "open", "Alpha")
+    run_cli(repo, "open", "Beta")
+    res_claim = run_cli(repo, "claim", "#002")
+    assert res_claim.exit_code == 0
+    wt = (tmp_path / "worktrees" / "002").resolve()
+
+    # Open Gamma (#003) on the branch
+    res_open = run_cli(wt, "open", "Gamma on the branch")
+    assert res_open.exit_code == 0
+    b = wt / "BACKLOG.md"
+    t = b.read_text(encoding="utf-8").replace(
+        "### [#003] Gamma on the branch\n",
+        "### [#003] Gamma on the branch\n- **Depends on**: #001\n",
+    )
+    b.write_text(t, encoding="utf-8")
+    subprocess.run(["git", "commit", "-qam", "dep"], cwd=str(wt), check=True)
+
+    # Reject #001 on main
+    res_rej = run_cli(repo, "reject", "#001", "--reason", "not needed")
+    assert res_rej.exit_code == 0
+    assert "Warning: item [#003] on branch claim/002 depends on [#001]" in res_rej.output
+

@@ -54,6 +54,12 @@
 - F12: items with slugless titles use slug `item` (`<ID>-item.md`), and branch scans recognize `<ID>-`, `<ID>.md`, and `<ID>/` formats so IDs are not re-allocated.
 - F13: folder branch scans read frontmatter `id` via `git cat-file --batch`, ensuring imported IDs (`ISS-20260917-slug`) classify as `other` and do not break sequential allocation.
 - F16: in repositories whose git folder is outside the tree (`.git` pointer file), commands requiring the primary tree refuse with a clear message when run from linked worktrees where the primary tree is unknown (Decision 27).
+- B1: `reject`, `cancel`, and `close` verify folder items are completely clean including untracked files before moving, refusing and naming uncommitted files (Decision 37).
+- S1: `primary_tree` resolves `.git` pointer files pointing directly to the common git dir as primary, and prevents external git store directories from being misidentified as worktrees (Decision 38).
+- S2: `reject` and `cancel` scan all items across active claim branches to warn about branch-only dependents missing from the primary tree (Decision 39).
+- S3: frontmatter parser and updater support YAML block lists for `depends_on` and `labels` (Decision 40).
+- S4: commands refuse `\r` and `\n` in single-line values (title, `--criterion`, `--note`, `--reason`, `--outcome`, `--labels`) and refuse leading `#` lines in `--why` and `--wanted` to prevent forged backlog entries (Decision 41).
+- N1–N4: `next` excludes claimed items from the blocked count; metadata parser stops at the first non-bold-bullet line; `normalize_id` strips backticks; `list` validates `--status` and `--priority` inputs against allowed values (Decision 42).
 
 ### Removed
 - Fallback to `BACKLOG/Open.md` when `BACKLOG.md` is missing (a project sets `backlog_layout`).

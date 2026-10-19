@@ -12,8 +12,10 @@ from backlog_cli.layouts import (
     SingleFileLayout,
     SplitFilesLayout,
     item_from_entry_lines,
+    normalize_id,
     parse_frontmatter,
     render_entry_lines,
+    update_frontmatter,
 )
 from backlog_cli.model import Item
 
@@ -939,6 +941,81 @@ def test_set_priority_folders(tmp_path: Path):
     text = item_file.read_text(encoding="utf-8")
     assert "priority: P1" in text
     assert item_file.is_file()
+
+
+def test_parse_frontmatter_block_lists():
+    """Decision 40: parse_frontmatter accepts block lists for depends_on and labels."""
+    text = (
+        "---\n"
+        'id: "#005"\n'
+        'title: "Block list task"\n'
+        "status: Open\n"
+        "priority: P2\n"
+        "depends_on:\n"
+        '  - "#001"\n'
+        '  - "#002"\n'
+        "labels:\n"
+        "  - bug\n"
+        '  - "frontend"\n'
+        "---\n\n"
+        "# Content\n"
+    )
+    fields, body, raw = parse_frontmatter(text)
+    assert fields["id"] == "#005"
+    assert fields["depends_on"] == ["#001", "#002"]
+    assert fields["labels"] == ["bug", "frontend"]
+
+
+def test_update_frontmatter_block_lists():
+    """Decision 40: update_frontmatter replaces block list entries cleanly without leaving orphans."""
+    text = (
+        "---\n"
+        'id: "#005"\n'
+        "status: Open\n"
+        "depends_on:\n"
+        '  - "#001"\n'
+        '  - "#002"\n'
+        "labels:\n"
+        "  - bug\n"
+        "---\n\n"
+        "# Content\n"
+    )
+    updated = update_frontmatter(text, {"depends_on": ["#003"], "status": "In Progress"})
+    fields, body, raw = parse_frontmatter(updated)
+    assert fields["status"] == "In Progress"
+    assert fields["depends_on"] == ["#003"]
+    assert fields["labels"] == ["bug"]
+    assert "- #001" not in updated
+    assert "- #002" not in updated
+
+
+def test_metadata_block_ends_at_first_non_bold_bullet():
+    """Decision 42 (N2): The reader's metadata block ends at the first line that is not '- **'."""
+    entry_lines = [
+        "### [#001] Task with body bullets",
+        "- **Status**: `Open` | **Priority**: `P1`",
+        "- **Created**: 2026-10-01",
+        "- A regular bullet point in the description",
+        "- **Labels**: `security`",
+        "",
+        "Some further details.",
+    ]
+    item = item_from_entry_lines(entry_lines)
+    assert item.id == "#001"
+    assert item.status == "Open"
+    assert item.priority == "P1"
+    assert item.fields.get("created") == "2026-10-01"
+    assert "security" not in item.fields.get("labels", [])
+
+
+def test_normalize_id_strips_backticks():
+    """Decision 42 (N3): normalize_id strips backticks."""
+    assert normalize_id("`#001`") == "#001"
+    assert normalize_id("`001`") == "#001"
+    assert normalize_id("[`#001`]") == "#001"
+    assert normalize_id("`[#001]`") == "#001"
+    assert normalize_id(" '#001' ") == "#001"
+
 
 
 

@@ -10,8 +10,15 @@ import pytest
 from conftest import make_repo
 
 
-def _init_repo_with_backlog(path: Path, layout: str = "single") -> Path:
-    repo = make_repo(path)
+import shutil
+import tempfile
+
+_TEMPLATE_CACHE: dict[str, Path] = {}
+
+
+def _create_layout_template(layout: str) -> Path:
+    td = Path(tempfile.mkdtemp(prefix=f"tpl_{layout}_"))
+    repo = make_repo(td / "repo")
     if layout == "single":
         backlog_text = (
             "# Project Backlog\n\n"
@@ -60,6 +67,14 @@ def _init_repo_with_backlog(path: Path, layout: str = "single") -> Path:
         subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
     subprocess.run(["git", "commit", "-q", "-m", "add backlog"], cwd=str(repo), check=True)
     return repo
+
+
+def _init_repo_with_backlog(path: Path, layout: str = "single") -> Path:
+    if layout not in _TEMPLATE_CACHE:
+        _TEMPLATE_CACHE[layout] = _create_layout_template(layout)
+    template = _TEMPLATE_CACHE[layout]
+    shutil.copytree(str(template), str(path), dirs_exist_ok=True)
+    return path
 
 
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
@@ -742,5 +757,59 @@ def test_branch_changed_other_entry_leaves_conflicts_for_user(tmp_path: Path, ru
     # Check that conflicts are left in wt2
     wt2_content = bf.read_text(encoding="utf-8")
     assert "<<<<<<<" in wt2_content
+
+
+def test_forged_entries_newlines_and_headings_refused(tmp_path: Path, run_cli):
+    """Decision 41: Refuse newlines in one-line options and leading '#' in --why / --wanted."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_forged", layout="single")
+
+    # Title newline
+    res = run_cli(repo, "open", "Alpha\nBeta")
+    assert res.exit_code != 0
+    assert "title cannot contain newlines" in res.output
+
+    # Criterion newline
+    res = run_cli(repo, "open", "Alpha", "--criterion", "Crit 1\nCrit 2")
+    assert res.exit_code != 0
+    assert "--criterion cannot contain newlines" in res.output
+
+    # Labels newline
+    res = run_cli(repo, "open", "Alpha", "--labels", "lbl1\nlbl2")
+    assert res.exit_code != 0
+    assert "--labels cannot contain newlines" in res.output
+
+    # Why with leading #
+    res = run_cli(repo, "open", "Alpha", "--why", "### Injected Heading")
+    assert res.exit_code != 0
+    assert "--why cannot contain lines starting with '#'" in res.output
+
+    # Wanted with leading #
+    res = run_cli(repo, "open", "Alpha", "--wanted", "Line 1\n# Injected Heading")
+    assert res.exit_code != 0
+    assert "--wanted cannot contain lines starting with '#'" in res.output
+
+    # Open a valid item #001
+    res = run_cli(repo, "open", "Alpha")
+    assert res.exit_code == 0
+
+    # Amend with note newline
+    res = run_cli(repo, "amend", "#001", "--note", "Note line 1\nNote line 2")
+    assert res.exit_code != 0
+    assert "--note cannot contain newlines" in res.output
+
+    # Reject with reason newline
+    res = run_cli(repo, "reject", "#001", "--reason", "Reason line 1\nReason line 2")
+    assert res.exit_code != 0
+    assert "--reason cannot contain newlines" in res.output
+
+    # Claim #001
+    res = run_cli(repo, "claim", "#001")
+    assert res.exit_code == 0
+
+    # Close with outcome newline
+    res = run_cli(repo, "close", "#001", "--outcome", "Outcome line 1\nOutcome line 2")
+    assert res.exit_code != 0
+    assert "--outcome cannot contain newlines" in res.output
+
 
 

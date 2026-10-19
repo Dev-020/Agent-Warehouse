@@ -45,6 +45,7 @@ from backlog_cli.layouts import (
     find_sections,
     get_layout,
     item_from_entry_lines,
+    normalize_item_fields,
     parse_frontmatter,
     parse_markdown_entries,
     read_text_preserving,
@@ -169,6 +170,106 @@ def find_item_on_branch(root: Path, branch: str, task_id: str, settings: Any) ->
                                 path=Path(md_path),
                             )
         return None
+
+
+def find_all_items_on_branch(root: Path, branch: str, settings: Any) -> list[Item]:
+    """Read all items on a branch ref without checking it out (Decision 39)."""
+    layout_type = settings.layout
+    items: list[Item] = []
+    if layout_type == "single":
+        try:
+            rel = settings.backlog_file.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            rel = settings.backlog_file.name
+        proc = subprocess.run(
+            ["git", "show", f"{branch}:{rel}"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if proc.returncode == 0 and proc.stdout:
+            lines = split_lines_exact(proc.stdout)
+            for s, e, tid, _ in parse_markdown_entries(lines):
+                it = item_from_entry_lines(lines[s:e], settings.backlog_file)
+                items.append(it)
+        return items
+
+    elif layout_type == "split":
+        try:
+            rel_dir = settings.backlog_dir.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            rel_dir = settings.backlog_dir.name
+        for fname in ("Open.md", "Closed.md"):
+            proc = subprocess.run(
+                ["git", "show", f"{branch}:{rel_dir}/{fname}"],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if proc.returncode == 0 and proc.stdout:
+                lines = split_lines_exact(proc.stdout)
+                for s, e, tid, _ in parse_markdown_entries(lines):
+                    it = item_from_entry_lines(lines[s:e], settings.backlog_dir / fname)
+                    items.append(it)
+        return items
+
+    elif layout_type == "folders":
+        try:
+            rel_dir = settings.backlog_dir.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            rel_dir = settings.backlog_dir.name
+        proc_ls = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", branch, "--", f"{rel_dir}/open", f"{rel_dir}/closed"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if proc_ls.returncode != 0:
+            return items
+        md_paths = [
+            l.strip()
+            for l in proc_ls.stdout.splitlines()
+            if l.strip().endswith(".md") and not l.strip().endswith("00_BACKLOG.md")
+        ]
+        for md_path in md_paths:
+            proc_show = subprocess.run(
+                ["git", "show", f"{branch}:{md_path}"],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if proc_show.returncode == 0 and proc_show.stdout:
+                fields, body, _ = parse_frontmatter(proc_show.stdout)
+                fields = normalize_item_fields(fields)
+                tid = str(fields.get("id", "")).strip()
+                if not tid:
+                    fname = Path(md_path).stem
+                    m = re.match(r"^(\d+|[A-Za-z]+-\d+)(?:-|\.md$|/|$)", fname)
+                    if m:
+                        tid = f"#{m.group(1)}" if m.group(1).isdigit() else m.group(1)
+                items.append(
+                    Item(
+                        id=tid,
+                        title=str(fields.get("title", "")),
+                        status=str(fields.get("status", "Open")),
+                        priority=str(fields.get("priority", "P2")),
+                        fields=fields,
+                        body=body,
+                        raw=proc_show.stdout,
+                        path=Path(md_path),
+                    )
+                )
+        return items
+
+    return items
 
 
 
@@ -426,6 +527,28 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_open(args: argparse.Namespace) -> int:
     """Create a new backlog item and allocate next ID."""
+    if "\r" in args.title or "\n" in args.title:
+        raise TaskError("title cannot contain newlines")
+
+    if args.criterion:
+        for c in args.criterion:
+            if "\r" in c or "\n" in c:
+                raise TaskError("--criterion cannot contain newlines")
+
+    if getattr(args, "labels", None) and args.labels:
+        if "\r" in args.labels or "\n" in args.labels:
+            raise TaskError("--labels cannot contain newlines")
+
+    if getattr(args, "why", None) and args.why:
+        for line in args.why.splitlines():
+            if line.strip().startswith("#"):
+                raise TaskError("--why cannot contain lines starting with '#'")
+
+    if getattr(args, "wanted", None) and args.wanted:
+        for line in args.wanted.splitlines():
+            if line.strip().startswith("#"):
+                raise TaskError("--wanted cannot contain lines starting with '#'")
+
     if args.claim:
         check_no_git_dir_env()
     cwd = Path.cwd()
@@ -806,6 +929,12 @@ def resolve_sync_conflicts(wt_path: Path, task_id: str, base: str, branch: str, 
 def cmd_close(args: argparse.Namespace) -> int:
     """Record completion, gate, merge to base branch, and tear down worktree."""
     check_no_git_dir_env()
+    outcome = args.outcome.strip() if getattr(args, "outcome", None) else ""
+    if not outcome:
+        raise TaskError("--outcome is required")
+    if "\r" in args.outcome or "\n" in args.outcome:
+        raise TaskError("--outcome cannot contain newlines")
+
     cwd = Path.cwd()
     root = repo_root(cwd)
     settings = load_settings(root)
@@ -1003,6 +1132,8 @@ def _handle_reject_or_cancel(args: argparse.Namespace, new_status: str) -> int:
     reason = args.reason.strip() if getattr(args, "reason", None) else ""
     if not reason:
         raise TaskError(f"--reason is required for {new_status.lower()}")
+    if "\r" in args.reason or "\n" in args.reason:
+        raise TaskError("--reason cannot contain newlines")
 
     cwd = Path.cwd()
     root = repo_root(cwd)
@@ -1055,13 +1186,14 @@ def _handle_reject_or_cancel(args: argparse.Namespace, new_status: str) -> int:
                 else:
                     unclaimed_dependents.append(it)
 
-    # Warning for items on claim branches (Decision 29)
+    # Warning for items on claim branches (Decision 29, Decision 39)
     for cb in claim_branches(root):
-        cb_id = cb[len(BRANCH_PREFIX) :]
-        cb_item = find_item_on_branch(root, cb, cb_id, primary_settings)
-        if cb_item and any(id_matches(d, item.id) for d in cb_item.fields.get("depends_on", [])):
-            if not primary_layout.find(cb_item.id):
-                print(f"Warning: item [{cb_item.id}] on branch {cb} depends on [{item.id}]")
+        branch_items = find_all_items_on_branch(root, cb, primary_settings)
+        for cb_item in branch_items:
+            deps = cb_item.fields.get("depends_on", [])
+            if any(id_matches(d, item.id) for d in deps):
+                if not primary_layout.find(cb_item.id):
+                    print(f"Warning: item [{cb_item.id}] on branch {cb} depends on [{item.id}]")
 
     verb = "rejected" if new_status == "Rejected" else "cancelled"
     dep_note = (
@@ -1133,6 +1265,8 @@ def cmd_cancel(args: argparse.Namespace) -> int:
 def cmd_amend(args: argparse.Namespace) -> int:
     """Amend a backlog task with notes or priority updates (Decision 30)."""
     check_no_git_dir_env()
+    if getattr(args, "note", None) is not None and ("\r" in args.note or "\n" in args.note):
+        raise TaskError("--note cannot contain newlines")
     task_id = args.id.strip().strip("'\"").strip("[]")
     note = args.note.strip() if getattr(args, "note", None) else None
     priority = args.priority.upper() if getattr(args, "priority", None) else None
@@ -1212,20 +1346,29 @@ def cmd_amend(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_list(args: argparse.Namespace) -> int:
-    """List backlog items with optional status and priority filtering (Decision 31)."""
-    cwd = Path.cwd()
-    root = repo_root(cwd)
-    primary_path = primary_tree(root)
-    primary_settings = load_settings(primary_path)
-    primary_layout = get_layout(primary_settings)
+def select_list_items(
+    items: list[Item],
+    claims: list[str],
+    status_filter: str | None = None,
+    priority_filter: str | None = None,
+    is_folders_layout: bool = False,
+) -> list[tuple[int, str, Any, Item, str, str]]:
+    """Pure selection and sorting function for backlog list (Decision 31, Decision 43)."""
+    valid_statuses = {"open", "in progress", "in-progress", "closed", "completed", "rejected", "cancelled", "all"}
+    if status_filter:
+        if status_filter.lower() not in valid_statuses:
+            raise TaskError(
+                f"Invalid status {status_filter!r}. Must be one of: Open, In Progress, Closed, Rejected, Cancelled, all"
+            )
 
-    claims = claim_branches(root)
+    valid_priorities = {"P1", "P2", "P3"}
+    if priority_filter:
+        if priority_filter.upper() not in valid_priorities:
+            raise TaskError(
+                f"Invalid priority {priority_filter!r}. Must be one of: P1, P2, P3"
+            )
+        priority_filter = priority_filter.upper()
 
-    status_filter = args.status.strip() if getattr(args, "status", None) and args.status else None
-    priority_filter = args.priority.strip().upper() if getattr(args, "priority", None) and args.priority else None
-
-    items = primary_layout.items()
     matched_entries = []
 
     for idx, item in enumerate(items):
@@ -1268,18 +1411,93 @@ def cmd_list(args: argparse.Namespace) -> int:
         created = item.fields.get("created") or ""
         sort_created = created if created else "9999-99-99"
 
-        if primary_settings.layout == "folders":
+        if is_folders_layout:
             pos = item.path.name if item.path else item.id
         else:
             pos = idx
 
         matched_entries.append((prio_rank, sort_created, pos, item, display_status, created))
 
+    matched_entries.sort(key=lambda x: (x[0], x[1], x[2]))
+    return matched_entries
+
+
+def select_next_item(
+    items: list[Item],
+    claims: list[str],
+    is_folders_layout: bool = False,
+) -> tuple[Item | None, int]:
+    """Pure selection function for next ready item (Decision 32, Decision 43)."""
+    ready_items = []
+    blocked_count = 0
+
+    for idx, item in enumerate(items):
+        if item.status != "Open":
+            continue
+
+        is_claimed = False
+        for branch in claims:
+            branch_id = branch[len(BRANCH_PREFIX) :]
+            if id_matches(item.id, branch_id):
+                is_claimed = True
+                break
+
+        if is_claimed:
+            continue
+
+        deps = item.fields.get("depends_on", [])
+        is_blocked = False
+        if deps:
+            for dep_id in deps:
+                dep_item = next((it for it in items if id_matches(it.id, dep_id)), None)
+                if not dep_item or dep_item.status not in ("Closed", "Completed"):
+                    is_blocked = True
+                    break
+
+        if is_blocked:
+            blocked_count += 1
+        else:
+            prio_rank = {"P1": 1, "P2": 2, "P3": 3}.get((item.priority or "").upper(), 99)
+            created = item.fields.get("created") or ""
+            sort_created = created if created else "9999-99-99"
+            if is_folders_layout:
+                pos = item.path.name if item.path else item.id
+            else:
+                pos = idx
+            ready_items.append((prio_rank, sort_created, pos, item, created))
+
+    if not ready_items:
+        return None, blocked_count
+
+    ready_items.sort(key=lambda x: (x[0], x[1], x[2]))
+    return ready_items[0][3], blocked_count
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    """List backlog items with optional status and priority filtering (Decision 31)."""
+    cwd = Path.cwd()
+    root = repo_root(cwd)
+    primary_path = primary_tree(root)
+    primary_settings = load_settings(primary_path)
+    primary_layout = get_layout(primary_settings)
+
+    claims = claim_branches(root)
+    items = primary_layout.items()
+
+    status_filter = args.status.strip() if getattr(args, "status", None) and args.status else None
+    priority_filter = args.priority.strip().upper() if getattr(args, "priority", None) and args.priority else None
+
+    matched_entries = select_list_items(
+        items,
+        claims,
+        status_filter=status_filter,
+        priority_filter=priority_filter,
+        is_folders_layout=(primary_settings.layout == "folders"),
+    )
+
     if not matched_entries:
         print("No items.")
         return 0
-
-    matched_entries.sort(key=lambda x: (x[0], x[1], x[2]))
 
     for _, _, _, item, disp_status, created in matched_entries:
         print(f"{item.id}\t{item.priority or ''}\t{disp_status}\t{created}\t{item.title}")
@@ -1298,48 +1516,17 @@ def cmd_next(args: argparse.Namespace) -> int:
     claims = claim_branches(root)
     items = primary_layout.items()
 
-    ready_items = []
-    blocked_count = 0
+    best, blocked_count = select_next_item(
+        items,
+        claims,
+        is_folders_layout=(primary_settings.layout == "folders"),
+    )
 
-    for idx, item in enumerate(items):
-        if item.status != "Open":
-            continue
-
-        is_claimed = False
-        for branch in claims:
-            branch_id = branch[len(BRANCH_PREFIX) :]
-            if id_matches(item.id, branch_id):
-                is_claimed = True
-                break
-
-        deps = item.fields.get("depends_on", [])
-        is_blocked = False
-        if deps:
-            for dep_id in deps:
-                dep_item = next((it for it in items if id_matches(it.id, dep_id)), None)
-                if not dep_item or dep_item.status not in ("Closed", "Completed"):
-                    is_blocked = True
-                    break
-
-        if is_blocked:
-            blocked_count += 1
-        elif not is_claimed:
-            prio_rank = {"P1": 1, "P2": 2, "P3": 3}.get((item.priority or "").upper(), 99)
-            created = item.fields.get("created") or ""
-            sort_created = created if created else "9999-99-99"
-            if primary_settings.layout == "folders":
-                pos = item.path.name if item.path else item.id
-            else:
-                pos = idx
-            ready_items.append((prio_rank, sort_created, pos, item, created))
-
-    if not ready_items:
+    if not best:
         print(f"No ready item. {blocked_count} open item{'s' if blocked_count != 1 else ''} {'is' if blocked_count == 1 else 'are'} blocked.")
         return 0
 
-    ready_items.sort(key=lambda x: (x[0], x[1], x[2]))
-    _, _, _, best, created = ready_items[0]
-
+    created = best.fields.get("created") or ""
     created_str = created if created else "unknown"
     prio_str = best.priority or "P2"
     print(f"[{best.id}] {best.title} ({prio_str}, created {created_str})")
