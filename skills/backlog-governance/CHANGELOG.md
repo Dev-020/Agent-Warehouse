@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+### Changed
+- Updated §9 command table for `tool/backlog-cli` 0.2: added rows for `reject`, `cancel`, `amend`, `list`, and `next`, quoted task IDs, and updated the manual edit example (Decision 46).
 
 ## [0.2.0] - 2026-10-09
 ### Changed

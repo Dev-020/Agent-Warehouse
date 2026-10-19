@@ -139,18 +139,22 @@ if the project doesn't have it, and check that it supports the project's layout.
 | Check the setup | `task.py doctor` |
 | See active claims | `task.py status` |
 | Open | `task.py open "<title>" --prefix <P> --priority <P1-P3>` |
-| Claim | `task.py claim <ID>`, then work in the printed worktree |
-| Resume a claim | `task.py adopt <ID>` |
-| Close | `task.py close <ID> --outcome "<one line, past tense>"`, run from the main tree |
-| Release without merging | `task.py abandon <ID>` |
+| Claim | `task.py claim '<ID>'`, then work in the printed worktree |
+| Resume a claim | `task.py adopt '<ID>'` |
+| Close | `task.py close '<ID>' --outcome "<one line, past tense>"`, run from the main tree |
+| Release without merging | `task.py abandon '<ID>'` |
+| Reject or cancel | `task.py reject '<ID>' --reason "<why>"` or `task.py cancel '<ID>' --reason "<why>"`, run from the main tree |
+| Amend | `task.py amend '<ID>' --note "<text>"` or `--priority <P1-P3>` |
+| List items | `task.py list [--status <status>] [--priority <P1-P3>]` |
+| What's next | `task.py next` |
 
 - **Agents don't edit by hand, not even a single line, unless the user allows it.** A hand edit bypasses
   ID allocation and the tool's checks. The user's permission covers what they said it covers, and no
   more.
 - **The user may bypass the tool** whenever they need to, and choose between the tool and editing by
   hand. The rule binds agents, not the user.
-- If the tool has no command for a step, such as rejecting an item, ask the user how to proceed rather
-  than editing by hand.
+- If the tool has no command for a step (for example, editing a claimed item's dependencies or criteria,
+  convention §4.8), ask the user how to proceed rather than editing by hand.
 
 ## 10. Never
 
