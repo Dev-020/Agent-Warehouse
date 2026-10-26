@@ -1,6 +1,6 @@
 ---
 id: skill/backlog-governance
-version: 0.2.0
+version: 0.3.0
 status: draft
 summary: "How an agent works a project's backlog at any level: orient, choose, claim, record findings, close with evidence, review, and know when to propose a change of level."
 applies-to: [vault, codebase]
