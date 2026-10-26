@@ -578,6 +578,29 @@ def test_claim_hint_quotes_task_id(tmp_path: Path, run_cli):
     assert "python task.py close '#001' --outcome 'Summary'" in res.output
 
 
+def test_claim_honours_backlog_path(tmp_path: Path, run_cli, monkeypatch):
+    """S2 regression: claim --backlog-path creates worktree and claims item from custom path."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_custom_path", layout="single")
+    subprocess.run(["git", "mv", "BACKLOG.md", "custom_tasks.md"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-m", "rename backlog to custom_tasks.md"], cwd=str(repo), check=True)
+
+    with monkeypatch.context() as m:
+        m.setenv("BACKLOG_FILE", "custom_tasks.md")
+        res_open = run_cli(repo, "open", "Custom path task")
+        assert res_open.exit_code == 0
+
+    # Now BACKLOG_FILE is not in env, only --backlog-path is passed to claim
+    res_claim = run_cli(repo, "claim", "#001", "--backlog-path", "custom_tasks.md")
+    assert res_claim.exit_code == 0
+    assert "Claimed [#001]:" in res_claim.output
+
+    wt_dir = (tmp_path / "worktrees" / "001").resolve()
+    assert wt_dir.is_dir()
+    wt_custom = wt_dir / "custom_tasks.md"
+    assert wt_custom.is_file()
+    assert "**Status**: `In Progress`" in wt_custom.read_text(encoding="utf-8")
+
+
 def test_tool_commits_do_not_have_co_authored_trailer(tmp_path: Path, run_cli):
     """F14: tool commits must not include a hardcoded Co-Authored-By trailer."""
     repo = _init_repo_with_backlog(tmp_path / "repo_f14")

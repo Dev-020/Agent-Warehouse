@@ -52,6 +52,7 @@ from backlog_cli.layouts import (
     split_lines_exact,
     write_text_preserving,
 )
+from backlog_cli.check import run_pre_merge_check
 from backlog_cli.model import Item
 from backlog_cli.settings import load_settings
 
@@ -659,7 +660,14 @@ def cmd_claim(args: argparse.Namespace) -> int:
         raise TaskError(f"Could not create worktree for [{task_id}]:\n{exc}")
 
     try:
-        wt_settings = load_settings(target_dir)
+        wt_backlog_path = None
+        if custom_backlog:
+            try:
+                rel_bp = settings.backlog_file.resolve().relative_to(root.resolve())
+            except ValueError:
+                rel_bp = Path(custom_backlog)
+            wt_backlog_path = str((target_dir / rel_bp).resolve())
+        wt_settings = load_settings(target_dir, backlog_path=wt_backlog_path)
         wt_layout = get_layout(wt_settings)
 
         def do_claim():
@@ -997,9 +1005,10 @@ def cmd_close(args: argparse.Namespace) -> int:
     if not item:
         raise TaskError(f"Task [{task_id}] not found in worktree backlog.")
 
-    # Decision 34: Unless the item is already Closed on the branch (F2), sync base into claim worktree
-    if item.status != "Closed":
-        # Step 2: Sync base branch into worktree
+    # Atomic sync, close, check, and merge under lock in primary tree (B2)
+    lock_file = git_dir(primary_path) / "merge.lock"
+    with MergeLock(lock_file):
+        # Step 2: Sync base branch into worktree (every run, Closed or not)
         merged = subprocess.run(
             ["git", "merge", base, "-m", f"{clean_id}: sync with {base}"],
             cwd=str(wt_path),
@@ -1015,17 +1024,22 @@ def cmd_close(args: argparse.Namespace) -> int:
                 err = (merged.stderr or merged.stdout).strip()
                 raise TaskError(f"Sync merge of {base} into {branch} failed:\n{err}")
 
-        # Step 3: The close write and its commit, on the merged tree
+        # Step 3: The close write and its commit, if not Closed yet
         wt_layout_merged = get_layout(wt_settings)
-        def do_close():
-            return wt_layout_merged.close(task_id, "Closed", args.outcome.strip())
+        item_merged = wt_layout_merged.find(task_id)
+        if not item_merged:
+            raise TaskError(f"Task [{task_id}] not found in worktree backlog after sync.")
+        if item_merged.status != "Closed":
+            def do_close():
+                return wt_layout_merged.close(task_id, "Closed", args.outcome.strip())
 
-        summary = f"chore(backlog): close [{task_id}]"[:72]
-        safe_commit(wt_path, summary, wt_layout_merged.paths_for(task_id), do_close)
+            summary = f"chore(backlog): close [{task_id}]"[:72]
+            safe_commit(wt_path, summary, wt_layout_merged.paths_for(task_id), do_close)
 
-    # Atomic merge under lock in primary tree
-    lock_file = git_dir(primary_path) / "merge.lock"
-    with MergeLock(lock_file):
+        # Pre-merge check (Decision 44): duplicate IDs and unticked criteria
+        run_pre_merge_check(primary_path, wt_path, task_id, base, branch, wt_settings)
+
+        # Step 4: Atomic merge into base in primary tree
         merge_res = subprocess.run(
             ["git", "merge", "--no-ff", branch, "-m", f"Merge {branch}: {args.outcome.strip()}"],
             cwd=str(primary_path),

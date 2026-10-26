@@ -207,7 +207,7 @@ def write_text_preserving(
 
 def parse_markdown_entries(lines: list[str]) -> list[tuple[int, int, str, str]]:
     """Locate all entry spans [start, end) outside code blocks."""
-    in_code_block = False
+    code_fence: tuple[str, int] | None = None
     entries: list[tuple[int, int, str, str]] = []
     current_start: int | None = None
     current_id: str | None = None
@@ -215,10 +215,18 @@ def parse_markdown_entries(lines: list[str]) -> list[tuple[int, int, str, str]]:
 
     for i, line in enumerate(lines):
         sline = line.strip()
-        if sline.startswith("```"):
-            in_code_block = not in_code_block
-            continue
-        if in_code_block:
+        m_fence = re.match(r"^(```+|~~~+)", sline)
+        if m_fence:
+            fence_chars = m_fence.group(1)
+            fence_char = fence_chars[0]
+            fence_len = len(fence_chars)
+            if code_fence is None:
+                code_fence = (fence_char, fence_len)
+                continue
+            elif code_fence[0] == fence_char and fence_len >= code_fence[1]:
+                code_fence = None
+                continue
+        if code_fence is not None:
             continue
 
         if line.startswith("## ") or line.startswith("### "):
@@ -244,14 +252,22 @@ def parse_markdown_entries(lines: list[str]) -> list[tuple[int, int, str, str]]:
 
 def find_sections(lines: list[str]) -> dict[str, tuple[int, int]]:
     """Map section names ('in progress', 'backlog', 'completed', 'icebox') to line spans (F11)."""
-    in_code_block = False
+    code_fence: tuple[str, int] | None = None
     all_headings: list[tuple[int, str | None]] = []
     for i, line in enumerate(lines):
         sline = line.strip()
-        if sline.startswith("```"):
-            in_code_block = not in_code_block
-            continue
-        if in_code_block:
+        m_fence = re.match(r"^(```+|~~~+)", sline)
+        if m_fence:
+            fence_chars = m_fence.group(1)
+            fence_char = fence_chars[0]
+            fence_len = len(fence_chars)
+            if code_fence is None:
+                code_fence = (fence_char, fence_len)
+                continue
+            elif code_fence[0] == fence_char and fence_len >= code_fence[1]:
+                code_fence = None
+                continue
+        if code_fence is not None:
             continue
         if line.startswith("## "):
             clean = re.sub(r"[^\w\s\(\)/-]", "", line[3:]).strip().lower()
