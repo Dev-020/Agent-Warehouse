@@ -45,7 +45,7 @@
 - `abandon` checks for unmerged commits on the claim branch; refuses deletion without `--force` and outputs tip hash with restoration instructions.
 - `open` no longer ignores failed commits; all tool commits execute atomically and roll back disk modifications and staged paths on hook failure.
 - Removed `--no-verify` from `claim` and `close` commits; all commits run repository hooks.
-- D5: `close` records `Resolved` as its own metadata field (`- **Resolved**: YYYY-MM-DD` or frontmatter `resolved:`) rather than appending to the Status line.
+- `close` records `Resolved` as its own metadata field (`- **Resolved**: YYYY-MM-DD` or frontmatter `resolved:`) rather than appending to the Status line.
 - Surgical layout editing preserves untouched entries, original line endings (LF/CRLF), and UTF-8 BOM byte-for-byte.
 - Clean refusals and standard guidance when running outside a git repository or without git on `PATH`.
 - In repositories with an external git directory (`.git` pointer file), commands requiring the primary tree refuse when run from linked worktrees where the main tree cannot be determined.
