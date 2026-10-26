@@ -19,6 +19,7 @@ from backlog_cli.layouts import (
     get_layout,
     normalize_id,
     parse_frontmatter,
+    parse_markdown_entries,
     split_lines_exact,
 )
 from backlog_cli.settings import load_settings
@@ -124,9 +125,11 @@ def collect_ids_with_locations(
     """Collect (raw_id, location) pairs from git ref or filesystem adhering to Decision 44."""
     if settings.layout == "single":
         try:
-            rel = settings.backlog_file.resolve().relative_to(root.resolve()).as_posix()
-        except ValueError:
-            rel = settings.backlog_file.name
+            rel = settings.backlog_file.resolve().relative_to(settings.root.resolve()).as_posix()
+        except ValueError as exc:
+            raise TaskError(
+                f"Backlog path {settings.backlog_file} is outside repository root {settings.root}"
+            ) from exc
 
         if ref is None:
             bf = (
@@ -138,38 +141,41 @@ def collect_ids_with_locations(
                 return []
             text = bf.read_text(encoding="utf-8", errors="replace")
         else:
-            proc = subprocess.run(
-                ["git", "show", f"{ref}:{rel}"],
+            exists_proc = subprocess.run(
+                ["git", "cat-file", "-e", f"{ref}:{rel}"],
                 cwd=str(root),
                 capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
             )
-            if proc.returncode != 0:
+            if exists_proc.returncode == 0:
+                proc = subprocess.run(
+                    ["git", "show", f"{ref}:{rel}"],
+                    cwd=str(root),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if proc.returncode != 0:
+                    err = (proc.stderr or proc.stdout).strip()
+                    raise TaskError(f"git show {ref}:{rel} failed:\n{err}")
+                text = proc.stdout
+            else:
                 return []
-            text = proc.stdout
 
         lines = split_lines_exact(text)
-        in_code = False
         results: list[tuple[str, str]] = []
-        for idx, line in enumerate(lines, start=1):
-            sline = line.strip()
-            if sline.startswith("```"):
-                in_code = not in_code
-                continue
-            if in_code:
-                continue
-            tid = parse_task_id(line)
+        for start_idx, _end_idx, tid, _title in parse_markdown_entries(lines):
             if tid:
-                results.append((tid, f"{rel}:{idx}"))
+                results.append((tid, f"{rel}:{start_idx + 1}"))
         return results
 
     elif settings.layout == "split":
         try:
-            rel_dir = settings.backlog_dir.resolve().relative_to(root.resolve()).as_posix()
-        except ValueError:
-            rel_dir = settings.backlog_dir.name
+            rel_dir = settings.backlog_dir.resolve().relative_to(settings.root.resolve()).as_posix()
+        except ValueError as exc:
+            raise TaskError(
+                f"Backlog dir {settings.backlog_dir} is outside repository root {settings.root}"
+            ) from exc
 
         bdir = (
             settings.backlog_dir
@@ -185,37 +191,40 @@ def collect_ids_with_locations(
                     continue
                 text = fpath.read_text(encoding="utf-8", errors="replace")
             else:
-                proc = subprocess.run(
-                    ["git", "show", f"{ref}:{rel_p}"],
+                exists_proc = subprocess.run(
+                    ["git", "cat-file", "-e", f"{ref}:{rel_p}"],
                     cwd=str(root),
                     capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
                 )
-                if proc.returncode != 0:
+                if exists_proc.returncode == 0:
+                    proc = subprocess.run(
+                        ["git", "show", f"{ref}:{rel_p}"],
+                        cwd=str(root),
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                    )
+                    if proc.returncode != 0:
+                        err = (proc.stderr or proc.stdout).strip()
+                        raise TaskError(f"git show {ref}:{rel_p} failed:\n{err}")
+                    text = proc.stdout
+                else:
                     continue
-                text = proc.stdout
 
             lines = split_lines_exact(text)
-            in_code = False
-            for idx, line in enumerate(lines, start=1):
-                sline = line.strip()
-                if sline.startswith("```"):
-                    in_code = not in_code
-                    continue
-                if in_code:
-                    continue
-                tid = parse_task_id(line)
+            for start_idx, _end_idx, tid, _title in parse_markdown_entries(lines):
                 if tid:
-                    results.append((tid, f"{rel_p}:{idx}"))
+                    results.append((tid, f"{rel_p}:{start_idx + 1}"))
         return results
 
     elif settings.layout == "folders":
         try:
-            rel_dir = settings.backlog_dir.resolve().relative_to(root.resolve()).as_posix()
-        except ValueError:
-            rel_dir = settings.backlog_dir.name
+            rel_dir = settings.backlog_dir.resolve().relative_to(settings.root.resolve()).as_posix()
+        except ValueError as exc:
+            raise TaskError(
+                f"Backlog dir {settings.backlog_dir} is outside repository root {settings.root}"
+            ) from exc
 
         bdir = (
             settings.backlog_dir
@@ -228,25 +237,31 @@ def collect_ids_with_locations(
                 sub_dir = bdir / sub
                 if not sub_dir.is_dir():
                     continue
-                for p in sub_dir.rglob("*.md"):
-                    if p.name in ("00_BACKLOG.md", ".gitkeep"):
-                        continue
-                    if p.parent.name not in ("open", "closed") and p.name != f"{p.parent.name}.md":
-                        continue
-                    try:
-                        rel_item = p.resolve().relative_to(root.resolve()).as_posix()
-                    except ValueError:
-                        rel_item = f"{rel_dir}/{sub}/{p.name}"
-                    text = p.read_text(encoding="utf-8", errors="replace")
-                    fields, _, _ = parse_frontmatter(text)
-                    tid = str(fields.get("id", "")).strip()
-                    if not tid:
-                        fname = p.stem
-                        m = re.match(r"^(\d+|[A-Za-z]+-\d+)(?:-|\.md$|/|$)", fname)
-                        if m:
-                            tid = f"#{m.group(1)}" if m.group(1).isdigit() else m.group(1)
-                    if tid:
-                        results.append((tid, rel_item))
+                for p in sub_dir.iterdir():
+                    file_to_read = None
+                    if p.is_file() and p.suffix == ".md" and p.name not in ("00_BACKLOG.md", ".gitkeep"):
+                        file_to_read = p
+                    elif p.is_dir():
+                        main_file = p / f"{p.name}.md"
+                        if main_file.is_file():
+                            file_to_read = main_file
+                    if file_to_read:
+                        try:
+                            rel_item = file_to_read.resolve().relative_to(settings.root.resolve()).as_posix()
+                        except ValueError as exc:
+                            raise TaskError(
+                                f"Backlog item {file_to_read} is outside repository root {settings.root}"
+                            ) from exc
+                        text = file_to_read.read_text(encoding="utf-8", errors="replace")
+                        fields, _, _ = parse_frontmatter(text)
+                        tid = str(fields.get("id", "")).strip()
+                        if not tid:
+                            fname = file_to_read.stem
+                            m = re.match(r"^(\d+|[A-Za-z]+-\d+)(?:-|\.md$|/|$)", fname)
+                            if m:
+                                tid = f"#{m.group(1)}" if m.group(1).isdigit() else m.group(1)
+                        if tid:
+                            results.append((tid, rel_item))
             return results
         else:
             proc_ls = subprocess.run(
@@ -258,7 +273,8 @@ def collect_ids_with_locations(
                 errors="replace",
             )
             if proc_ls.returncode != 0:
-                return []
+                err = (proc_ls.stderr or proc_ls.stdout).strip()
+                raise TaskError(f"git ls-tree failed for {ref}:\n{err}")
 
             main_files: list[tuple[str, str]] = []
             folder_blobs: dict[str, list[tuple[str, str]]] = {}
@@ -296,29 +312,31 @@ def collect_ids_with_locations(
                     input=cat_input,
                     capture_output=True,
                 )
-                if cat_proc.returncode == 0:
-                    pos = 0
-                    out = cat_proc.stdout
-                    for oid, path_str in main_files:
-                        nl = out.find(b"\n", pos)
-                        if nl == -1:
-                            break
-                        hdr = out[pos:nl].decode("ascii", errors="replace")
-                        pos = nl + 1
-                        hdr_parts = hdr.split()
-                        if len(hdr_parts) >= 3 and hdr_parts[1] == "blob":
-                            size = int(hdr_parts[2])
-                            content = out[pos : pos + size].decode("utf-8", errors="replace")
-                            pos = pos + size + 1
-                            fields, _, _ = parse_frontmatter(content)
-                            tid = str(fields.get("id", "")).strip()
-                            if not tid:
-                                fname = Path(path_str).stem
-                                m = re.match(r"^(\d+|[A-Za-z]+-\d+)(?:-|\.md$|/|$)", fname)
-                                if m:
-                                    tid = f"#{m.group(1)}" if m.group(1).isdigit() else m.group(1)
-                            if tid:
-                                results.append((tid, path_str))
+                if cat_proc.returncode != 0:
+                    err = (cat_proc.stderr or cat_proc.stdout).strip()
+                    raise TaskError(f"git cat-file --batch failed:\n{err}")
+                pos = 0
+                out = cat_proc.stdout
+                for oid, path_str in main_files:
+                    nl = out.find(b"\n", pos)
+                    if nl == -1:
+                        break
+                    hdr = out[pos:nl].decode("ascii", errors="replace")
+                    pos = nl + 1
+                    hdr_parts = hdr.split()
+                    if len(hdr_parts) >= 3 and hdr_parts[1] == "blob":
+                        size = int(hdr_parts[2])
+                        content = out[pos : pos + size].decode("utf-8", errors="replace")
+                        pos = pos + size + 1
+                        fields, _, _ = parse_frontmatter(content)
+                        tid = str(fields.get("id", "")).strip()
+                        if not tid:
+                            fname = Path(path_str).stem
+                            m = re.match(r"^(\d+|[A-Za-z]+-\d+)(?:-|\.md$|/|$)", fname)
+                            if m:
+                                tid = f"#{m.group(1)}" if m.group(1).isdigit() else m.group(1)
+                        if tid:
+                            results.append((tid, path_str))
             return results
 
     return []

@@ -400,3 +400,173 @@ def test_close_compact_entry_no_warning(tmp_path: Path, run_cli):
     assert "Warning:" not in res.output
     assert "Successfully closed and merged [TASK-1]" in res.output
     assert not wt_dir.exists()
+
+
+def test_close_duplicate_check_subfolder_single(tmp_path: Path, run_cli):
+    """B1 regression: check detects duplicate when backlog is in a subfolder (single layout)."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_sub_single", layout="single")
+    (repo / "docs").mkdir()
+    subprocess.run(["git", "mv", "BACKLOG.md", "docs/BACKLOG.md"], cwd=str(repo), check=True)
+    (repo / ".warehouse.yml").write_text(
+        "settings:\n  backlog_layout: single\n  backlog_file: docs/BACKLOG.md\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-m", "move backlog to docs/"], cwd=str(repo), check=True)
+
+    run_cli(repo, "open", "First task", "--prefix", "TASK", "--new-prefix")
+    run_cli(repo, "open", "Second task", "--prefix", "TASK")
+    run_cli(repo, "claim", "TASK-2")
+
+    wt_dir = (tmp_path / "worktrees" / "TASK-2").resolve()
+    bfile = wt_dir / "docs" / "BACKLOG.md"
+    content = bfile.read_text(encoding="utf-8")
+    content = content.replace(
+        "## 📌 Backlog (Open Tasks)\n",
+        "## 📌 Backlog (Open Tasks)\n\n### [TASK-1] Duplicate copy\n- **Status**: `Open` | **Priority**: `P2`\n",
+        1,
+    )
+    bfile.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "commit", "-am", "add dup TASK-1"], cwd=str(wt_dir), check=True)
+
+    res = run_cli(repo, "close", "TASK-2", "--outcome", "done")
+    assert res.exit_code != 0
+    assert "Duplicate ID [TASK-1]:" in res.output
+    assert "docs/BACKLOG.md:" in res.output
+    assert wt_dir.is_dir()
+
+
+def test_close_duplicate_check_subfolder_split(tmp_path: Path, run_cli):
+    """B1 regression: check detects duplicate when backlog is in a subfolder (split layout)."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_sub_split", layout="split")
+    (repo / "docs").mkdir()
+    subprocess.run(["git", "mv", "BACKLOG", "docs/BACKLOG"], cwd=str(repo), check=True)
+    (repo / ".warehouse.yml").write_text(
+        "settings:\n  backlog_layout: split\n  backlog_dir: docs/BACKLOG\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-m", "move split backlog to docs/"], cwd=str(repo), check=True)
+
+    run_cli(repo, "open", "First task", "--prefix", "TASK", "--new-prefix")
+    run_cli(repo, "open", "Second task", "--prefix", "TASK")
+    run_cli(repo, "claim", "TASK-2")
+
+    wt_dir = (tmp_path / "worktrees" / "TASK-2").resolve()
+    open_file = wt_dir / "docs" / "BACKLOG" / "Open.md"
+    content = open_file.read_text(encoding="utf-8")
+    open_file.write_text(
+        content + "\n### [TASK-1] Dup copy\n- **Status**: `Open` | **Priority**: `P2`\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "commit", "-am", "add dup TASK-1"], cwd=str(wt_dir), check=True)
+
+    res = run_cli(repo, "close", "TASK-2", "--outcome", "done")
+    assert res.exit_code != 0
+    assert "Duplicate ID [TASK-1]:" in res.output
+    assert "docs/BACKLOG/Open.md:" in res.output
+    assert wt_dir.is_dir()
+
+
+def test_close_duplicate_check_subfolder_folders(tmp_path: Path, run_cli):
+    """B1 regression: check detects duplicate when backlog is in a subfolder (folders layout)."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_sub_folders", layout="folders")
+    (repo / "docs").mkdir()
+    subprocess.run(["git", "mv", "BACKLOG", "docs/BACKLOG"], cwd=str(repo), check=True)
+    (repo / ".warehouse.yml").write_text(
+        "settings:\n  backlog_layout: folders\n  backlog_dir: docs/BACKLOG\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-m", "move folders backlog to docs/"], cwd=str(repo), check=True)
+
+    run_cli(repo, "open", "First task", "--prefix", "TASK", "--new-prefix")
+    run_cli(repo, "open", "Second task", "--prefix", "TASK")
+    run_cli(repo, "claim", "TASK-2")
+
+    wt_dir = (tmp_path / "worktrees" / "TASK-2").resolve()
+    dup_file = wt_dir / "docs" / "BACKLOG" / "open" / "TASK-1-dup.md"
+    dup_file.write_text(
+        '---\nid: "TASK-1"\ntitle: Dup\nstatus: Open\npriority: P2\ncreated: 2026-10-20\n---\n\n# [TASK-1] Dup\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "-A"], cwd=str(wt_dir), check=True)
+    subprocess.run(["git", "commit", "-m", "add dup item"], cwd=str(wt_dir), check=True)
+
+    res = run_cli(repo, "close", "TASK-2", "--outcome", "done")
+    assert res.exit_code != 0
+    assert "Duplicate ID [TASK-1]:" in res.output
+    assert "docs/BACKLOG/open/" in res.output
+    assert wt_dir.is_dir()
+
+
+def test_close_rerun_syncs_moved_base(tmp_path: Path, run_cli):
+    """B2 regression: re-run of close syncs moved base and detects duplicate."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_rerun_sync", layout="folders")
+    run_cli(repo, "open", "Alpha", "--prefix", "TASK", "--new-prefix")
+    run_cli(repo, "open", "Beta", "--prefix", "TASK")
+    run_cli(repo, "claim", "TASK-2")
+
+    wt_dir = (tmp_path / "worktrees" / "TASK-2").resolve()
+    dup_file = wt_dir / "BACKLOG" / "open" / "TASK-1-dup.md"
+    dup_file.write_text(
+        '---\nid: "TASK-1"\ntitle: Dup\nstatus: Open\npriority: P2\ncreated: 2026-10-20\n---\n\n# [TASK-1] Dup\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "-A"], cwd=str(wt_dir), check=True)
+    subprocess.run(["git", "commit", "-m", "dup TASK-1"], cwd=str(wt_dir), check=True)
+
+    # First close attempt blocked by TASK-1 duplicate
+    res1 = run_cli(repo, "close", "TASK-2", "--outcome", "done")
+    assert res1.exit_code != 0
+    assert "Duplicate ID [TASK-1]" in res1.output
+
+    # Meanwhile base gains TASK-7
+    base_file = repo / "BACKLOG" / "open" / "TASK-7-on-main.md"
+    base_file.write_text(
+        '---\nid: "TASK-7"\ntitle: On main\nstatus: Open\npriority: P2\ncreated: 2026-10-20\n---\n\n# [TASK-7] Main\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-m", "base adds TASK-7"], cwd=str(repo), check=True)
+
+    # Worktree fixes TASK-1 dup, but adds its own TASK-7
+    dup_file.unlink()
+    branch_file = wt_dir / "BACKLOG" / "open" / "TASK-7-on-branch.md"
+    branch_file.write_text(
+        '---\nid: "TASK-7"\ntitle: On branch\nstatus: Open\npriority: P2\ncreated: 2026-10-20\n---\n\n# [TASK-7] Branch\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "-A"], cwd=str(wt_dir), check=True)
+    subprocess.run(["git", "commit", "-m", "fix dup 1, add 7"], cwd=str(wt_dir), check=True)
+
+    # Re-running close should sync base and catch duplicate TASK-7
+    res2 = run_cli(repo, "close", "TASK-2", "--outcome", "done")
+    assert res2.exit_code != 0
+    assert "Duplicate ID [TASK-7]" in res2.output
+    assert wt_dir.is_dir()
+
+
+def test_close_indented_heading_in_note_not_false_positive(tmp_path: Path, run_cli):
+    """S1 regression: indented heading in note or code block does not trigger false positive."""
+    repo = _init_repo_with_backlog(tmp_path / "repo_indented_note", layout="single")
+    run_cli(repo, "open", "Alpha", "--prefix", "TASK", "--new-prefix")
+    run_cli(repo, "open", "Beta", "--prefix", "TASK")
+    run_cli(repo, "claim", "TASK-2")
+
+    wt_dir = (tmp_path / "worktrees" / "TASK-2").resolve()
+    bfile = wt_dir / "BACKLOG.md"
+    t = bfile.read_text(encoding="utf-8")
+    anchor = "### [TASK-2] Beta\n"
+    i = t.index(anchor)
+    j = t.index("#### Outcome", i)
+    t = (
+        t[:j]
+        + "#### Notes\n- 2026-10-20: code block quoting TASK-1:\n\n"
+        + "      ### [TASK-1] Alpha\n\n"
+        + t[j:]
+    )
+    bfile.write_text(t, encoding="utf-8")
+    subprocess.run(["git", "commit", "-am", "note quoting TASK-1"], cwd=str(wt_dir), check=True)
+
+    res = run_cli(repo, "close", "TASK-2", "--outcome", "done")
+    assert res.exit_code == 0
+    assert "Duplicate ID" not in res.output
+    assert not wt_dir.exists()
