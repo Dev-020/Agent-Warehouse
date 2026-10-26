@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+
+## [0.2.0] - 2026-10-26
 ### Added
 - Settings `backlog_layout`, `backlog_file`, and `backlog_dir` read from the project's `.warehouse.yml` manifest.
 - Support for `split` (`Open.md`, `Closed.md`) and `folders` (`open/`, `closed/`) backlog layouts alongside `single` file across all commands.

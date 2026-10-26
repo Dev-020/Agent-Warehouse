@@ -1,6 +1,6 @@
 ---
 id: tool/backlog-cli
-version: 0.1.0
+version: 0.2.0
 status: draft
 summary: CLI backlog manager for tool-only writing across single-file, split-files, and item-folders layouts with atomic worktree claims.
 applies-to: [vault, codebase]
