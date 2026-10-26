@@ -660,7 +660,14 @@ def cmd_claim(args: argparse.Namespace) -> int:
         raise TaskError(f"Could not create worktree for [{task_id}]:\n{exc}")
 
     try:
-        wt_settings = load_settings(target_dir)
+        wt_backlog_path = None
+        if custom_backlog:
+            try:
+                rel_bp = settings.backlog_file.resolve().relative_to(root.resolve())
+            except ValueError:
+                rel_bp = Path(custom_backlog)
+            wt_backlog_path = str((target_dir / rel_bp).resolve())
+        wt_settings = load_settings(target_dir, backlog_path=wt_backlog_path)
         wt_layout = get_layout(wt_settings)
 
         def do_claim():

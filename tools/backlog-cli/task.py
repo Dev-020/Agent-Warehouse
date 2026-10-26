@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     # abandon
     p_aban = sub.add_parser("abandon", help="Release claim without merging")
     p_aban.add_argument("id", help="Task ID")
-    p_aban.add_argument("--force", action="store_true", help="Discard uncommitted changes")
+    p_aban.add_argument("--force", action="store_true", help="Discard uncommitted changes and unmerged commits")
     p_aban.set_defaults(func=cmd_abandon)
 
     # reject
