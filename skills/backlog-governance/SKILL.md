@@ -144,7 +144,7 @@ if the project doesn't have it, and check that it supports the project's layout.
 | Close | `task.py close '<ID>' --outcome "<one line, past tense>"`, run from the main tree |
 | Release without merging | `task.py abandon '<ID>'` |
 | Reject or cancel | `task.py reject '<ID>' --reason "<why>"` or `task.py cancel '<ID>' --reason "<why>"`, run from the main tree |
-| Amend | `task.py amend '<ID>' --note "<text>"` or `--priority <P1-P3>` |
+| Amend | `task.py amend '<ID>' --note "<text>" [--priority <P1-P3>]` |
 | List items | `task.py list [--status <status>] [--priority <P1-P3>]` |
 | What's next | `task.py next` |
 

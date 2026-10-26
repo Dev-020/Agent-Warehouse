@@ -76,7 +76,7 @@ All twelve commands provided by `task.py`:
 ## 5. Workflow
 
 The standard agent cycle follows four steps:
-1. `open`: create the item. Inside a claim worktree, `open` writes and commits directly to that claim worktree so new items merge together with the work that found them (S9). Otherwise, it writes to the primary tree.
+1. `open`: create the item. Inside a claim worktree, `open` writes and commits directly to that claim worktree so new items merge together with the work that found them. Otherwise, it writes to the primary tree.
 2. `claim`: run `claim '<ID>'` from the main tree to provision `claim/<clean_id>` and `<worktree_root>/<clean_id>`.
 3. Work in the worktree: develop code, edit files, and make commits inside `<worktree_root>/<clean_id>`.
 4. `close`: run `close '<ID>' --outcome "..."` from the main tree.
@@ -85,17 +85,17 @@ The standard agent cycle follows four steps:
 - `open`: inside a claim worktree, writes and commits to that worktree; otherwise writes to the primary tree.
 - `claim`: branches from base and commits in the new claim worktree.
 - `amend`: writes in the claim worktree if the item is claimed, otherwise in the primary tree.
-- `reject` / `cancel`: writes in the primary tree; notes for dependents on active claim branches are committed directly in each dependent's claim worktree (`chore(backlog): note [<ID>]`, Decision 36).
+- `reject` / `cancel`: writes in the primary tree; notes for dependents on active claim branches are committed directly in each dependent's claim worktree (`chore(backlog): note [<ID>]`).
 - `close`: writes close metadata in the claim worktree, commits, and merges into the base branch in the primary tree.
 
 ### Sync Conflicts on Close
-Before closing, `close` merges the base branch into the claim worktree (Decision 34):
-- In `single` and `split` layouts, if merge conflicts occur solely on backlog files and the claim branch made no edits to unrelated tasks, `close` automatically resolves the conflict (retaining base tasks plus the claim's own entry and items opened in its worktree, Decision 35).
+Before closing, `close` merges the base branch into the claim worktree:
+- In `single` and `split` layouts, if merge conflicts occur solely on backlog files and the claim branch made no edits to unrelated tasks, `close` automatically resolves the conflict (retaining base tasks plus the claim's own entry and items opened in its worktree).
 - If non-backlog files conflict, if unrelated tasks were edited on the branch, or under `folders`, `close` leaves the conflicted files for manual resolution. After resolving and committing the conflict in the worktree, re-running `close` continues cleanly.
 
 ## 6. Pre-Merge Check
 
-After writing the close commit and before acquiring the merge lock, `close` runs a pre-merge check on what the branch introduced (Decision 44):
+Inside the merge lock, `close` runs a pre-merge check on what the branch introduced:
 - **Blocking: new duplicate IDs**: Counts all IDs across open and closed items at the base tip and claim tip. If an ID appears more than once at the claim tip and more often than at the base tip, `close` halts before merging, lists every copy with its location (`file:line` or item path), and instructs the user to fix the duplicate in the worktree, commit, and re-run `close`. Pre-existing duplicates on base are ignored.
 - **Warning: unticked criteria**: If the closing entry at the claim tip has unticked criteria (`- [ ]`) under its Acceptance Criteria heading, `close` prints a non-blocking warning: `Warning: [<ID>] closed with N unticked criteria: #2, #3`. Compact entries have no criteria list and produce no warning.
 - No CLI flag bypasses the check. To bypass the tool, edit and merge in git by hand (`convention/backlog` §6).
@@ -112,12 +112,12 @@ After writing the close commit and before acquiring the merge lock, `close` runs
 
 In setups where `.git` is a pointer file referring to an external git directory (such as with `tool/git-dir-relocate`):
 - Commands run normally from the primary tree.
-- When run from a linked worktree where the primary tree cannot be resolved, commands that require the primary tree refuse and instruct the user to run from the main tree (F16).
-- If `GIT_DIR` or `GIT_WORK_TREE` environment variables are set, `claim`, `close`, and `abandon` refuse to run, preventing worktree git commands from acting on the wrong directory.
+- When run from a linked worktree where the primary tree cannot be resolved, commands that require the primary tree refuse and instruct the user to run from the main tree.
+- If `GIT_DIR` or `GIT_WORK_TREE` environment variables are set, `claim`, `close`, `abandon`, `reject`, `cancel`, `amend`, and `open --claim` refuse to run, preventing worktree git commands from acting on the wrong directory.
 
 ## 9. Known Limits
 
-- **No generated sections**: 0.2 maintains no generated views or task maps (S19).
+- **No generated sections**: 0.2 maintains no generated views or task maps.
 - **No external trackers**: does not integrate directly with third-party trackers; external trackers manage their own lifecycles.
 - **No support for repositories reached solely via `GIT_DIR`/`GIT_WORK_TREE`**: requires a `.git` directory or pointer file in the tree.
-- **Test suite duration**: executing the full test suite runs real git operations across three layouts on Windows ([WH-6]).
+- **Test suite duration**: the full test suite is slow (several minutes on Windows).
