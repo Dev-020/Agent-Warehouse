@@ -49,10 +49,10 @@ auto_sync: true
 target: warehouse/
 items:
   - protocol/agent-protocol@0.1
-  - protocol/working-memory@0.1
+  - protocol/working-memory@0.2
   - convention/commits@0.1
-  - convention/backlog@0.1
-  - protocol/session-log@0.1
+  - convention/backlog@0.2
+  - protocol/session-log@0.2
   - protocol/safe-write@0.1
 ```
 

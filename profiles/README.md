@@ -10,9 +10,9 @@ Instead of dumping every catalog item into a new project, projects adopt a profi
 
 | Profile | Tier | Applies To | Summary | Items |
 |---|---|---|---|---|
-| **`starter`** | 0 | `[vault, codebase]` | Minimal viable posture. Prevents hallucinations and unverified changes. | `protocol/agent-protocol@0.1`<br/>`protocol/working-memory@0.1` |
-| **`standard`** | 1 | `[vault, codebase]` | Operational single-repo workflow with task tracking and clean git history. | `starter` +<br/>`convention/commits@0.1`<br/>`convention/backlog@0.1`<br/>`protocol/session-log@0.1`<br/>`protocol/safe-write@0.1` |
-| **`concurrency`** | 2 | `[vault, codebase]` | Multi-agent coordination with git worktree claims, CLI tasks, and swarm roles. | `standard` +<br/>`protocol/worktree-claims@0.1`<br/>`tool/backlog-cli@0.1`<br/>`skill/backlog-governance@0.1`<br/>`architecture/codebuff-orchestration@0.1` |
+| **`starter`** | 0 | `[vault, codebase]` | Minimal viable posture. Prevents hallucinations and unverified changes. | `protocol/agent-protocol@0.1`<br/>`protocol/working-memory@0.2` |
+| **`standard`** | 1 | `[vault, codebase]` | Operational single-repo workflow with task tracking and clean git history. | `starter` +<br/>`convention/commits@0.1`<br/>`convention/backlog@0.2`<br/>`protocol/session-log@0.2`<br/>`protocol/safe-write@0.1` |
+| **`concurrency`** | 2 | `[vault, codebase]` | Multi-agent coordination with git worktree claims, CLI tasks, and swarm roles. | `standard` +<br/>`protocol/worktree-claims@0.1`<br/>`tool/backlog-cli@0.2`<br/>`skill/backlog-governance@0.3`<br/>`architecture/codebuff-orchestration@0.1` |
 | **`academic`** | 3 | `[vault]` | Academic research vault with LaTeX authoring, audit, and Tectonic compilation. | `starter` +<br/>`tool/tex-compile@0.1`<br/>`skill/latex-pdf@0.1` |
 
 ---
