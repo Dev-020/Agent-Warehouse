@@ -102,6 +102,7 @@ Items intentionally postponed until enough real use cases exist. Revisit when se
 - [[computer-use-research]] — staged Hermes computer-use vs building on cua-driver, with prior-art comparison
 - [[backlog-comparison]]
 - [[backlog-industry-research]] — how established teams track and triage work; Level 4 (external tracker); review of the issue-triage request
+- [[testing-practices-research]] — prior art for test suites: Google test sizes and scopes, flaky tests, test doubles, pyramid vs trophy, agent-written tests (2026); research for WH-10
 - [[agentic-landscape]]
 - [[codebuff-trial-log]]
 - [[codebuff-source-links]]
