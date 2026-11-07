@@ -499,10 +499,10 @@ Summary: 1 updated · 1 major available · 1 drift · 1 unfilled · 1 project sk
 ```
 Status words (fixed vocabulary): `installed updated downgraded restored adopted removed unchanged compatible
 outside-pin major drift promoted blocked unfilled collision deprecated orphan not-installable missing-tag
-invalid-manifest untracked missing-software platform error`. `--json` prints
+invalid-manifest untracked missing-software platform error needs-retry stale-pin`. `--json` prints
 `{"command","date","exit_code","lines":[{"project","status","id","detail"}],"summary":{status: count}}`.
 Statuses that raise exit 1: `drift blocked unfilled collision missing-tag invalid-manifest error
-not-installable` (plus `check`: any non-info status).
+not-installable needs-retry` (plus `check`: any non-info status; `stale-pin` is info).
 
 ### 4.1 Shared: `resolve(ctx, project, lock, mode, ids)`
 
@@ -683,10 +683,12 @@ deprecated, orphan, blocked. Exit 0 (2/3 on errors).
 ### 4.9 `check [--project PATH]` (read-only, all projects by default)
 
 Warehouse section: `lint_item` for every item; malformed tags; tags whose content id/version mismatches;
-warn "no tags found (git fetch --tags?)" when items exist but no tags. Per project: `invalid-manifest`,
-drift, promoted, `compatible` (for manual projects), `outside-pin`, `major`, `unfilled`, `deprecated`,
-`blocked`, `orphan`, `missing-tag` (lock version tag absent), `untracked` (files in target not in lock,
-excluding README and temp files; info), `missing-software`, `platform`. Exit 0 if only info, else 1.
+warn "no tags found (git fetch --tags?)" when items exist but no tags. Profiles check: validates `profiles/*.yml`
+and `*.yaml`; stale pins and deprecated items = `stale-pin` (info); unparseable entries, invalid pins, unknown items,
+pins with no matching release, duplicate items and unreadable profile files = `error`. Per project: `invalid-manifest`,
+drift, promoted, `compatible` (for manual projects), `outside-pin`, `major`, `unfilled`, `deprecated`, `blocked`,
+`orphan`, `missing-tag` (lock version tag absent), `untracked` (files in target not in lock, excluding README and
+temp files; info), `missing-software`, `platform`. Exit 0 if only info, else 1.
 
 `software.check(entry)`: grammar `^(?P<name>[A-Za-z0-9_.-]+)\s*(?:(?P<op>>=|<=|==|>|<)\s*(?P<ver>\d+(?:\.\d+)*))?$`.
 `python` → compare `sys.version_info`; else `shutil.which(name)`; if a version is required run
@@ -758,11 +760,14 @@ unfilled ones stay literal with a warning. `<dest>` must not exist (exit 2); par
 no header, not tracked.
 
 **`bootstrap [--write] [--include-drafts]`** — project-scoped (cwd, no manifest required).
-Detect types: `vault` if `.obsidian/` exists; `codebase` if any of `package.json pyproject.toml
-requirements.txt setup.py go.mod Cargo.toml pom.xml *.csproj` at root. Candidates: ids with a release, latest
-release `status: canonical` (drafts only with `--include-drafts`), not deprecated, kind ≠ template,
-`applies-to ∩ types ≠ ∅`. Print the proposed manifest (items with default pins, `settings:` with `""` values and
-description comments, `auto_sync: true`, `target: warehouse/`). `--write`: write `.warehouse.yml` only if absent
+Shared detection (`detect_project_types` in `discovery.py`): `vault` if `.obsidian/` directory exists; `codebase` if
+any marker file (`package.json`, `pyproject.toml`, `requirements.txt`, `setup.py`, `go.mod`, `Cargo.toml`, `pom.xml`,
+`tsconfig.json`, `deno.json`, `index.html`, `composer.json`, `Gemfile`, `build.gradle`) or glob (`*.csproj`, `*.sln`)
+exists at root (both can be true). When nothing matches, prints `warehouse bootstrap: no vault or codebase markers found; assuming codebase`
+and defaults to `codebase`. When types are detected and a profile's `applies-to` does not intersect them, warns to stderr
+(also used by `warehouse profile apply`). Candidates: ids with a release, latest release `status: canonical` (drafts only with `--include-drafts`),
+not deprecated, kind ≠ template, `applies-to ∩ types ≠ ∅`. Print the proposed manifest (items with default pins, `settings:` with `""` values
+and description comments, `auto_sync: true`, `target: warehouse/`). `--write`: write `.warehouse.yml` only if absent
 (exit 2 otherwise); never syncs. Exit 0.
 
 ### 4.13 `install-hook [--force]`

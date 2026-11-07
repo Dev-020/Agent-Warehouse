@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from .. import manifest, render, items, profiles
-from ..discovery import load_project
+from ..discovery import detect_project_types, load_project
 from ..errors import UsageError
 from ..semver import Pin
 
@@ -13,22 +13,12 @@ from ..semver import Pin
 def run(ctx, args) -> int:
     proj_path = Path(args.project).resolve() if args.project else Path.cwd()
     
-    types = set()
-    if (proj_path / ".obsidian").is_dir():
-        types.add("vault")
-        
-    codebase_markers = ["package.json", "pyproject.toml", "requirements.txt", "setup.py", "go.mod", "Cargo.toml", "pom.xml"]
-    for marker in codebase_markers:
-        if (proj_path / marker).is_file():
-            types.add("codebase")
-            break
-    if not ("codebase" in types):
-        if any(proj_path.glob("*.csproj")):
-            types.add("codebase")
-
-    if not types:
-        print("warehouse bootstrap: neither vault nor codebase detected", file=sys.stderr)
-        types.add("codebase") # default fallback
+    detected_types = detect_project_types(proj_path)
+    if detected_types:
+        types = set(detected_types)
+    else:
+        print("warehouse bootstrap: no vault or codebase markers found; assuming codebase", file=sys.stderr)
+        types = {"codebase"}
 
     profile_name = getattr(args, "profile", "starter") or "starter"
 
@@ -71,6 +61,14 @@ def run(ctx, args) -> int:
         prof = profiles.get_profile(ctx.warehouse_root, profile_name)
         if not prof:
             raise UsageError(f"profile '{profile_name}' not found")
+
+        if detected_types and prof.applies_to and not set(prof.applies_to).intersection(detected_types):
+            applies_to_str = ", ".join(sorted(prof.applies_to))
+            types_str = ", ".join(sorted(detected_types))
+            print(
+                f"warehouse bootstrap: profile '{profile_name}' applies to [{applies_to_str}]; this project looks like [{types_str}]",
+                file=sys.stderr,
+            )
 
         out = ["auto_sync: true", "target: warehouse/", "items:"]
         for it in prof.items:

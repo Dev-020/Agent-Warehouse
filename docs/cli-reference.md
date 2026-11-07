@@ -61,6 +61,14 @@ warehouse bootstrap [--profile <NAME>] [--write] [--include-drafts] [--project <
 - `--write`: Write `.warehouse.yml` directly to the project root. If omitted, only prints the proposed manifest to stdout.
 - `--include-drafts`: Include draft (`0.x.y`) items when bootstrapping with `--profile all`.
 
+**Project-Type Detection:**
+Shared project-type detection (`discovery.detect_project_types`) inspects the project root:
+- **Vault:** `.obsidian/` directory.
+- **Codebase:** `package.json`, `pyproject.toml`, `requirements.txt`, `setup.py`, `go.mod`, `Cargo.toml`, `pom.xml`, `tsconfig.json`, `deno.json`, `index.html`, `composer.json`, `Gemfile`, `build.gradle`, or globs `*.csproj` and `*.sln`.
+- Both types can be detected simultaneously if markers for both exist.
+- **Fallback:** When neither marker matches, prints `warehouse bootstrap: no vault or codebase markers found; assuming codebase` to stderr and defaults to `codebase` (no mismatch warning is printed).
+- **Mismatch Warning:** When types are detected and the chosen profile's `applies-to` is non-empty and does not intersect them, prints `warehouse bootstrap: profile '<name>' applies to [<applies-to>]; this project looks like [<types>]` to stderr (manifest is still produced, exit 0). `warehouse profile apply` uses the same check.
+
 **Examples:**
 ```bash
 # Preview proposed starter manifest
@@ -336,6 +344,7 @@ warehouse check [--json]
 - Detects drifted (locally edited) files.
 - Checks for projects stuck in retry or failed migrations.
 - Confirms release tags exist in the Git repository.
+- Profile pins: Validates profile definitions in `profiles/*.yml` and `*.yaml`. Stale pins and deprecated items report `stale-pin` (info); unparseable entries, invalid pins, unknown items, pins with no matching release, duplicate items and unreadable profile files report `error`.
 
 **Examples:**
 ```bash

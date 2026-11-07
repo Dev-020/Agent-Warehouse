@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from .. import fsops, manifest as manifest_mod, profiles
+from ..discovery import detect_project_types
 from ..errors import UsageError
 from ..semver import Pin
 from . import current_project
@@ -183,6 +184,15 @@ def _apply(ctx, args) -> int:
 
     proj, lock = current_project(ctx)
     m = proj.manifest
+
+    detected_types = detect_project_types(proj.root)
+    if detected_types and prof.applies_to and not set(prof.applies_to).intersection(detected_types):
+        applies_to_str = ", ".join(sorted(prof.applies_to))
+        types_str = ", ".join(sorted(detected_types))
+        print(
+            f"warehouse profile apply: profile '{args.name}' applies to [{applies_to_str}]; this project looks like [{types_str}]",
+            file=sys.stderr,
+        )
 
     added_items = []
     text = m.raw

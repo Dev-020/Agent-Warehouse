@@ -6,9 +6,9 @@ from dataclasses import dataclass
 
 STATUSES = ("installed updated downgraded restored adopted removed unchanged compatible outside-pin major drift "
             "promoted blocked unfilled collision deprecated orphan not-installable missing-tag invalid-manifest "
-            "untracked missing-software platform error needs-retry").split()
+            "untracked missing-software platform error needs-retry stale-pin").split()
 EXIT1 = {"drift", "blocked", "unfilled", "collision", "missing-tag", "invalid-manifest", "error", "not-installable", "needs-retry"}
-CHECK_INFO = {"unchanged", "compatible", "outside-pin", "major", "untracked", "promoted"}
+CHECK_INFO = {"unchanged", "compatible", "outside-pin", "major", "untracked", "promoted", "stale-pin"}
 
 
 @dataclass

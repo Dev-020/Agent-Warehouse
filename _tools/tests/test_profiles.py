@@ -301,3 +301,179 @@ def test_cli_bootstrap_with_profile(wh):
     code, out = wh.run("bootstrap", "--profile", "nonexistent", project=p2)
     assert code == 2
     assert "profile 'nonexistent' not found" in out
+
+
+def test_check_profiles_stale_pin_and_json(wh):
+    wh.publish("protocol/working-memory", "0.1.0")
+    wh.publish("protocol/working-memory", "0.2.0")
+    profiles.save_profile(wh.root, Profile(
+        name="starter",
+        items=["protocol/working-memory@0.1"],
+    ))
+    code, out = wh.run("check")
+    assert code == 0, out
+    assert "stale-pin" in out
+    assert "profile starter pins @0.1; 0.2.0 is current (use @0.2)" in out
+
+    # Verify JSON output
+    code_json, out_json = wh.run("--json", "check")
+    assert code_json == 0
+    data = json.loads(out_json)
+    assert data["summary"].get("stale-pin") == 1
+    stale_lines = [l for l in data["lines"] if l["status"] == "stale-pin"]
+    assert len(stale_lines) == 1
+    assert stale_lines[0]["id"] == "protocol/working-memory"
+    assert "profile starter pins @0.1; 0.2.0 is current (use @0.2)" in stale_lines[0]["detail"]
+
+
+def test_check_profiles_current_pins_and_patches(wh):
+    wh.publish("protocol/agent-protocol", "0.1.0")
+    wh.publish("tool/my-tool", "1.0.0")
+    profiles.save_profile(wh.root, Profile(
+        name="current",
+        items=["protocol/agent-protocol@0.1", "tool/my-tool@1"],
+    ))
+    code, out = wh.run("check")
+    assert code == 0, out
+    assert "stale-pin" not in out
+
+    # Add newer patches on the same lines
+    wh.publish("protocol/agent-protocol", "0.1.1")
+    wh.publish("tool/my-tool", "1.0.1")
+    code, out = wh.run("check")
+    assert code == 0, out
+    assert "stale-pin" not in out
+
+
+def test_check_profiles_deprecated_item(wh):
+    wh.publish("protocol/old", "1.0.0", status="deprecated")
+    wh.publish("protocol/new", "1.0.0", replaces="protocol/old")
+    profiles.save_profile(wh.root, Profile(
+        name="legacy",
+        items=["protocol/old@1"],
+    ))
+    code, out = wh.run("check")
+    assert code == 0, out
+    assert "stale-pin" in out
+    assert "profile legacy: protocol/old is deprecated; use protocol/new" in out
+
+
+def test_check_profiles_broken_cases(wh):
+    wh.publish("protocol/valid", "1.0.0")
+
+    # D2 case 1: invalid entry (fails ENTRY_RE)
+    profiles.save_profile(wh.root, Profile(name="bad-entry", items=["not-an-item"]))
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile bad-entry: invalid entry 'not-an-item'" in out
+    profiles.delete_profile(wh.root, "bad-entry")
+
+    # D2 case 2: invalid pin (Pin.parse raises)
+    profiles.save_profile(wh.root, Profile(name="bad-pin", items=["protocol/valid@0"]))
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile bad-pin: invalid pin '@0'" in out
+    profiles.delete_profile(wh.root, "bad-pin")
+
+    # D2 case 3: unknown item id
+    profiles.save_profile(wh.root, Profile(name="unknown-id", items=["protocol/nonexistent@1"]))
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile unknown-id: unknown item 'protocol/nonexistent'" in out
+    profiles.delete_profile(wh.root, "unknown-id")
+
+    # D2 case 4: pin that matches no released version
+    profiles.save_profile(wh.root, Profile(name="unmatched", items=["protocol/valid@2"]))
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile unmatched: pin @2 matches no released version" in out
+
+
+def test_check_profiles_unreadable_file(wh):
+    profiles_dir = wh.root / "profiles"
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Broken YAML in .yml file
+    (profiles_dir / "broken.yml").write_text("items: [unterminated\n", encoding="utf-8")
+    code, out = wh.run("check")
+    assert code == 1
+    assert "error" in out
+    assert "profile file broken.yml: could not be read" in out
+    (profiles_dir / "broken.yml").unlink()
+
+    # 2. YAML that is not a mapping (e.g. sequence)
+    (profiles_dir / "not_mapping.yml").write_text("- item1\n- item2\n", encoding="utf-8")
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile file not_mapping.yml: could not be read (not a mapping)" in out
+    (profiles_dir / "not_mapping.yml").unlink()
+
+    # 3. Broken YAML in .yaml file
+    (profiles_dir / "broken.yaml").write_text("items: [unterminated\n", encoding="utf-8")
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile file broken.yaml: could not be read" in out
+    (profiles_dir / "broken.yaml").unlink()
+
+    # 4. README.md in profiles directory is ignored
+    (profiles_dir / "README.md").write_text("# Profiles Documentation\nNot a profile.", encoding="utf-8")
+    code, out = wh.run("check")
+    assert code == 0
+    assert "README.md" not in out
+
+
+def test_check_profiles_duplicate_item(wh):
+    wh.publish("protocol/p", "0.1.0")
+    wh.publish("protocol/p", "0.2.0")
+    # Duplicate item in profile: protocol/p listed twice (with different pins)
+    profiles.save_profile(wh.root, Profile(name="dup", items=["protocol/p@0.1", "protocol/p@0.2"]))
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile dup: protocol/p is listed more than once" in out
+    # Nothing else about that id is required or reported (e.g. not stale-pin)
+    assert "stale-pin" not in out
+
+
+def test_released_major_pin_stale(wh):
+    wh.publish("protocol/p", "1.0.0")
+    wh.publish("protocol/p", "2.0.0")
+    profiles.save_profile(wh.root, Profile(name="s", items=["protocol/p@1"]))
+    code, out = wh.run("check")
+    assert code == 0
+    assert "profile s pins @1; 2.0.0 is current (use @2)" in out
+
+
+def test_exact_draft_pin_stale(wh):
+    wh.publish("protocol/p", "0.1.0")
+    wh.publish("protocol/p", "0.2.0")
+    profiles.save_profile(wh.root, Profile(name="s", items=["protocol/p@0.1.0"]))
+    code, out = wh.run("check")
+    assert code == 0
+    assert "profile s pins @0.1.0; 0.2.0 is current (use @0.2)" in out
+
+
+def test_exact_pin_same_line_not_stale(wh):
+    wh.publish("protocol/p", "0.1.0")
+    wh.publish("protocol/p", "0.1.1")
+    profiles.save_profile(wh.root, Profile(name="s", items=["protocol/p@0.1.0"]))
+    code, out = wh.run("check")
+    assert code == 0 and "stale-pin" not in out
+
+
+def test_warnings_on_stderr_not_stdout(wh):
+    profiles.save_profile(wh.root, Profile(name="academic", applies_to=["vault"], items=[]))
+    p = wh.projects_dir / "c"
+    p.mkdir()
+    (p / "package.json").touch()
+    code, out, err = wh.run("bootstrap", "--profile", "academic", project=p, split=True)
+    assert code == 0
+    assert "warehouse bootstrap: profile 'academic' applies to [vault]; this project looks like [codebase]" in err
+    assert "applies to" not in out
+    e = wh.projects_dir / "e"
+    e.mkdir()
+    code, out, err = wh.run("bootstrap", "--profile", "academic", project=e, split=True)
+    assert code == 0 and "warehouse bootstrap: no vault or codebase markers found; assuming codebase" in err
+    assert "markers" not in out and "applies to" not in err
+
+
+

@@ -9,6 +9,48 @@ from . import manifest as manifest_mod
 from .config import Config
 from .errors import UsageError
 
+VAULT_MARKERS = (".obsidian",)
+
+CODEBASE_MARKERS = (
+    "package.json",
+    "pyproject.toml",
+    "requirements.txt",
+    "setup.py",
+    "go.mod",
+    "Cargo.toml",
+    "pom.xml",
+    "tsconfig.json",
+    "deno.json",
+    "index.html",
+    "composer.json",
+    "Gemfile",
+    "build.gradle",
+)
+
+CODEBASE_GLOBS = (
+    "*.csproj",
+    "*.sln",
+)
+
+
+def detect_project_types(root: Path) -> set[str]:
+    root = Path(root)
+    types: set[str] = set()
+    for vm in VAULT_MARKERS:
+        if (root / vm).is_dir():
+            types.add("vault")
+            break
+    for marker in CODEBASE_MARKERS:
+        if (root / marker).is_file():
+            types.add("codebase")
+            break
+    if "codebase" not in types:
+        for glob_pat in CODEBASE_GLOBS:
+            if any(root.glob(glob_pat)):
+                types.add("codebase")
+                break
+    return types
+
 
 @dataclass
 class Project:
