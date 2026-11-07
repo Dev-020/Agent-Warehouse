@@ -195,14 +195,19 @@ class Warehouse:
         return root
 
     # ------------------------------------------------------------------ running
-    def run(self, *argv, project: Path | None = None, today: str | None = None) -> tuple[int, str]:
+    def run(self, *argv, project: Path | None = None, today: str | None = None, split: bool = False):
         args = ["--warehouse", str(self.root), "--config", str(self.config), "--today", today or self.today]
         if project is not None:
             args += ["--project", str(project)]
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = cli.main(args + list(argv))
+        if split:
+            return code, out.getvalue(), err.getvalue()
         return code, out.getvalue() + err.getvalue()
+
+    def run_split(self, *argv, project: Path | None = None, today: str | None = None) -> tuple[int, str, str]:
+        return self.run(*argv, project=project, today=today, split=True)
 
     def lock(self, project: Path) -> dict:
         return json.loads((project / ".warehouse.lock").read_text(encoding="utf-8"))

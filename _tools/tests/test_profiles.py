@@ -434,3 +434,46 @@ def test_check_profiles_duplicate_item(wh):
     assert "stale-pin" not in out
 
 
+def test_released_major_pin_stale(wh):
+    wh.publish("protocol/p", "1.0.0")
+    wh.publish("protocol/p", "2.0.0")
+    profiles.save_profile(wh.root, Profile(name="s", items=["protocol/p@1"]))
+    code, out = wh.run("check")
+    assert code == 0
+    assert "profile s pins @1; 2.0.0 is current (use @2)" in out
+
+
+def test_exact_draft_pin_stale(wh):
+    wh.publish("protocol/p", "0.1.0")
+    wh.publish("protocol/p", "0.2.0")
+    profiles.save_profile(wh.root, Profile(name="s", items=["protocol/p@0.1.0"]))
+    code, out = wh.run("check")
+    assert code == 0
+    assert "profile s pins @0.1.0; 0.2.0 is current (use @0.2)" in out
+
+
+def test_exact_pin_same_line_not_stale(wh):
+    wh.publish("protocol/p", "0.1.0")
+    wh.publish("protocol/p", "0.1.1")
+    profiles.save_profile(wh.root, Profile(name="s", items=["protocol/p@0.1.0"]))
+    code, out = wh.run("check")
+    assert code == 0 and "stale-pin" not in out
+
+
+def test_warnings_on_stderr_not_stdout(wh):
+    profiles.save_profile(wh.root, Profile(name="academic", applies_to=["vault"], items=[]))
+    p = wh.projects_dir / "c"
+    p.mkdir()
+    (p / "package.json").touch()
+    code, out, err = wh.run("bootstrap", "--profile", "academic", project=p, split=True)
+    assert code == 0
+    assert "warehouse bootstrap: profile 'academic' applies to [vault]; this project looks like [codebase]" in err
+    assert "applies to" not in out
+    e = wh.projects_dir / "e"
+    e.mkdir()
+    code, out, err = wh.run("bootstrap", "--profile", "academic", project=e, split=True)
+    assert code == 0 and "warehouse bootstrap: no vault or codebase markers found; assuming codebase" in err
+    assert "markers" not in out and "applies to" not in err
+
+
+

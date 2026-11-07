@@ -683,12 +683,12 @@ deprecated, orphan, blocked. Exit 0 (2/3 on errors).
 ### 4.9 `check [--project PATH]` (read-only, all projects by default)
 
 Warehouse section: `lint_item` for every item; malformed tags; tags whose content id/version mismatches;
-warn "no tags found (git fetch --tags?)" when items exist but no tags. Profiles check: validates `profiles/*.yml`;
-stale pins (pinned behind current release line) and deprecated items report `stale-pin` (info, exit 0); broken profile
-entries (invalid entry syntax, invalid pin, unknown item id, or pin matching no released version) report `error`
-(exit 1). Per project: `invalid-manifest`, drift, promoted, `compatible` (for manual projects), `outside-pin`, `major`,
-`unfilled`, `deprecated`, `blocked`, `orphan`, `missing-tag` (lock version tag absent), `untracked` (files in target
-not in lock, excluding README and temp files; info), `missing-software`, `platform`. Exit 0 if only info, else 1.
+warn "no tags found (git fetch --tags?)" when items exist but no tags. Profiles check: validates `profiles/*.yml`
+and `*.yaml`; stale pins and deprecated items = `stale-pin` (info); unparseable entries, invalid pins, unknown items,
+pins with no matching release, duplicate items and unreadable profile files = `error`. Per project: `invalid-manifest`,
+drift, promoted, `compatible` (for manual projects), `outside-pin`, `major`, `unfilled`, `deprecated`, `blocked`,
+`orphan`, `missing-tag` (lock version tag absent), `untracked` (files in target not in lock, excluding README and
+temp files; info), `missing-software`, `platform`. Exit 0 if only info, else 1.
 
 `software.check(entry)`: grammar `^(?P<name>[A-Za-z0-9_.-]+)\s*(?:(?P<op>>=|<=|==|>|<)\s*(?P<ver>\d+(?:\.\d+)*))?$`.
 `python` → compare `sys.version_info`; else `shutil.which(name)`; if a version is required run

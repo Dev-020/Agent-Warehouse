@@ -344,7 +344,7 @@ warehouse check [--json]
 - Detects drifted (locally edited) files.
 - Checks for projects stuck in retry or failed migrations.
 - Confirms release tags exist in the Git repository.
-- Profile pins: Validates profile definitions in `profiles/*.yml`. Stale pins (behind current release line) and deprecated items report `stale-pin` (info, exit 0). Broken entries (syntax errors, invalid pins, unknown item IDs, or pins matching no released version) report `error` (exit 1).
+- Profile pins: Validates profile definitions in `profiles/*.yml` and `*.yaml`. Stale pins and deprecated items report `stale-pin` (info); unparseable entries, invalid pins, unknown items, pins with no matching release, duplicate items and unreadable profile files report `error`.
 
 **Examples:**
 ```bash
