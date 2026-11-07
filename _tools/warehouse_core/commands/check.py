@@ -4,13 +4,14 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .. import items, lockfile, software
+from .. import items, lockfile, manifest, profiles, software
 from ..discovery import find_projects, load_project
 from ..errors import GitError, UsageError
 from ..inspect import drifted, inspect_item, tracked_paths
 from ..render import effective_settings
 from ..report import Report
 from ..resolve import ResolveError, resolve
+from ..semver import Pin
 from . import emit
 
 
@@ -30,6 +31,45 @@ def check_warehouse(ctx, report: Report) -> None:
         report.add(None, "missing-tag", None, "no tags found (git fetch --tags?)", info=True)
     if ctx.read_auto_state().get("needs_retry"):
         report.add(None, "needs-retry", None, "auto-sync requires a retry (see auto-sync.json)")
+    check_profiles(ctx, report)
+
+
+def check_profiles(ctx, report: Report) -> None:
+    C = ctx.catalog
+    for prof in profiles.list_profiles(ctx.warehouse_root):
+        for it in prof.items:
+            mm = manifest.ENTRY_RE.match(it)
+            if not mm:
+                report.add(None, "error", it, f"profile {prof.name}: invalid entry '{it}'")
+                continue
+            iid = mm.group("id")
+            if iid not in C.all_ids():
+                report.add(None, "error", iid, f"profile {prof.name}: unknown item '{iid}'")
+                continue
+            pin_str = mm.group("pin")
+            pin = None
+            if pin_str is not None:
+                try:
+                    pin = Pin.parse(pin_str)
+                except UsageError:
+                    report.add(None, "error", iid, f"profile {prof.name}: invalid pin '@{pin_str}'")
+                    continue
+            if pin is not None and not any(pin.matches(v) for v in C.versions(iid)):
+                report.add(None, "error", iid, f"profile {prof.name}: pin @{pin.text} matches no released version")
+                continue
+
+            latest_overall = C.latest(iid)
+            if latest_overall is None:
+                continue
+            meta = C.meta(iid, latest_overall)
+            if meta.status == "deprecated":
+                succ = C.successor(iid)
+                detail = f"profile {prof.name}: {iid} is deprecated" + (f"; use {succ}" if succ else "")
+                report.add(None, "stale-pin", iid, detail)
+            elif pin is not None and latest_overall.line > pin.line:
+                new_pin = f"0.{latest_overall.minor}" if latest_overall.is_draft else f"{latest_overall.major}"
+                detail = f"profile {prof.name} pins @{pin.text}; {latest_overall} is current (use @{new_pin})"
+                report.add(None, "stale-pin", iid, detail)
 
 
 def check_project(ctx, report: Report, proj) -> None:

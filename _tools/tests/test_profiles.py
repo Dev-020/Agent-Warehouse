@@ -301,3 +301,90 @@ def test_cli_bootstrap_with_profile(wh):
     code, out = wh.run("bootstrap", "--profile", "nonexistent", project=p2)
     assert code == 2
     assert "profile 'nonexistent' not found" in out
+
+
+def test_check_profiles_stale_pin_and_json(wh):
+    wh.publish("protocol/working-memory", "0.1.0")
+    wh.publish("protocol/working-memory", "0.2.0")
+    profiles.save_profile(wh.root, Profile(
+        name="starter",
+        items=["protocol/working-memory@0.1"],
+    ))
+    code, out = wh.run("check")
+    assert code == 0, out
+    assert "stale-pin" in out
+    assert "profile starter pins @0.1; 0.2.0 is current (use @0.2)" in out
+
+    # Verify JSON output
+    code_json, out_json = wh.run("--json", "check")
+    assert code_json == 0
+    data = json.loads(out_json)
+    assert data["summary"].get("stale-pin") == 1
+    stale_lines = [l for l in data["lines"] if l["status"] == "stale-pin"]
+    assert len(stale_lines) == 1
+    assert stale_lines[0]["id"] == "protocol/working-memory"
+    assert "profile starter pins @0.1; 0.2.0 is current (use @0.2)" in stale_lines[0]["detail"]
+
+
+def test_check_profiles_current_pins_and_patches(wh):
+    wh.publish("protocol/agent-protocol", "0.1.0")
+    wh.publish("tool/my-tool", "1.0.0")
+    profiles.save_profile(wh.root, Profile(
+        name="current",
+        items=["protocol/agent-protocol@0.1", "tool/my-tool@1"],
+    ))
+    code, out = wh.run("check")
+    assert code == 0, out
+    assert "stale-pin" not in out
+
+    # Add newer patches on the same lines
+    wh.publish("protocol/agent-protocol", "0.1.1")
+    wh.publish("tool/my-tool", "1.0.1")
+    code, out = wh.run("check")
+    assert code == 0, out
+    assert "stale-pin" not in out
+
+
+def test_check_profiles_deprecated_item(wh):
+    wh.publish("protocol/old", "1.0.0", status="deprecated")
+    wh.publish("protocol/new", "1.0.0", replaces="protocol/old")
+    profiles.save_profile(wh.root, Profile(
+        name="legacy",
+        items=["protocol/old@1"],
+    ))
+    code, out = wh.run("check")
+    assert code == 0, out
+    assert "stale-pin" in out
+    assert "profile legacy: protocol/old is deprecated; use protocol/new" in out
+
+
+def test_check_profiles_broken_cases(wh):
+    wh.publish("protocol/valid", "1.0.0")
+
+    # D2 case 1: invalid entry (fails ENTRY_RE)
+    profiles.save_profile(wh.root, Profile(name="bad-entry", items=["not-an-item"]))
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile bad-entry: invalid entry 'not-an-item'" in out
+    profiles.delete_profile(wh.root, "bad-entry")
+
+    # D2 case 2: invalid pin (Pin.parse raises)
+    profiles.save_profile(wh.root, Profile(name="bad-pin", items=["protocol/valid@0"]))
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile bad-pin: invalid pin '@0'" in out
+    profiles.delete_profile(wh.root, "bad-pin")
+
+    # D2 case 3: unknown item id
+    profiles.save_profile(wh.root, Profile(name="unknown-id", items=["protocol/nonexistent@1"]))
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile unknown-id: unknown item 'protocol/nonexistent'" in out
+    profiles.delete_profile(wh.root, "unknown-id")
+
+    # D2 case 4: pin that matches no released version
+    profiles.save_profile(wh.root, Profile(name="unmatched", items=["protocol/valid@2"]))
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile unmatched: pin @2 matches no released version" in out
+
