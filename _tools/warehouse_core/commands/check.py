@@ -36,13 +36,30 @@ def check_warehouse(ctx, report: Report) -> None:
 
 def check_profiles(ctx, report: Report) -> None:
     C = ctx.catalog
-    for prof in profiles.list_profiles(ctx.warehouse_root):
+    profs, unreadable = profiles.list_profiles_for_check(ctx.warehouse_root)
+    for p, reason in unreadable:
+        report.add(None, "error", p.name, f"profile file {p.name}: could not be read ({reason})")
+
+    for prof in profs:
+        item_counts: dict[str, int] = {}
+        for it in prof.items:
+            mm = manifest.ENTRY_RE.match(it)
+            if mm:
+                iid = mm.group("id")
+                item_counts[iid] = item_counts.get(iid, 0) + 1
+
+        duplicate_ids = {iid for iid, count in item_counts.items() if count > 1}
+        for iid in sorted(duplicate_ids):
+            report.add(None, "error", iid, f"profile {prof.name}: {iid} is listed more than once")
+
         for it in prof.items:
             mm = manifest.ENTRY_RE.match(it)
             if not mm:
                 report.add(None, "error", it, f"profile {prof.name}: invalid entry '{it}'")
                 continue
             iid = mm.group("id")
+            if iid in duplicate_ids:
+                continue
             if iid not in C.all_ids():
                 report.add(None, "error", iid, f"profile {prof.name}: unknown item '{iid}'")
                 continue

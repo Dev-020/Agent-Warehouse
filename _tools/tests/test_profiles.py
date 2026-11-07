@@ -388,3 +388,49 @@ def test_check_profiles_broken_cases(wh):
     assert code == 1
     assert "profile unmatched: pin @2 matches no released version" in out
 
+
+def test_check_profiles_unreadable_file(wh):
+    profiles_dir = wh.root / "profiles"
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Broken YAML in .yml file
+    (profiles_dir / "broken.yml").write_text("items: [unterminated\n", encoding="utf-8")
+    code, out = wh.run("check")
+    assert code == 1
+    assert "error" in out
+    assert "profile file broken.yml: could not be read" in out
+    (profiles_dir / "broken.yml").unlink()
+
+    # 2. YAML that is not a mapping (e.g. sequence)
+    (profiles_dir / "not_mapping.yml").write_text("- item1\n- item2\n", encoding="utf-8")
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile file not_mapping.yml: could not be read (not a mapping)" in out
+    (profiles_dir / "not_mapping.yml").unlink()
+
+    # 3. Broken YAML in .yaml file
+    (profiles_dir / "broken.yaml").write_text("items: [unterminated\n", encoding="utf-8")
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile file broken.yaml: could not be read" in out
+    (profiles_dir / "broken.yaml").unlink()
+
+    # 4. README.md in profiles directory is ignored
+    (profiles_dir / "README.md").write_text("# Profiles Documentation\nNot a profile.", encoding="utf-8")
+    code, out = wh.run("check")
+    assert code == 0
+    assert "README.md" not in out
+
+
+def test_check_profiles_duplicate_item(wh):
+    wh.publish("protocol/p", "0.1.0")
+    wh.publish("protocol/p", "0.2.0")
+    # Duplicate item in profile: protocol/p listed twice (with different pins)
+    profiles.save_profile(wh.root, Profile(name="dup", items=["protocol/p@0.1", "protocol/p@0.2"]))
+    code, out = wh.run("check")
+    assert code == 1
+    assert "profile dup: protocol/p is listed more than once" in out
+    # Nothing else about that id is required or reported (e.g. not stale-pin)
+    assert "stale-pin" not in out
+
+

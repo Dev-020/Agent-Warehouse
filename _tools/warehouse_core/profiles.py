@@ -39,13 +39,14 @@ def _clean_name(name: str) -> str:
     return clean
 
 
-def _load_profile_file(path: Path) -> Profile | None:
+def load_profile_file(path: Path) -> tuple[Profile | None, str | None]:
+    """Loads a profile file. Returns (Profile, None) on success, or (None, reason) on failure."""
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
+    except Exception as e:
+        return None, str(e)
     if not isinstance(data, dict):
-        return None
+        return None, "not a mapping"
 
     name = str(data.get("name") or path.stem)
     if name.endswith(".yml"):
@@ -87,7 +88,35 @@ def _load_profile_file(path: Path) -> Profile | None:
         items=items_list,
         settings=settings,
         path=path,
+    ), None
+
+
+def _load_profile_file(path: Path) -> Profile | None:
+    prof, _ = load_profile_file(path)
+    return prof
+
+
+def list_profiles_for_check(warehouse_root: Path) -> tuple[list[Profile], list[tuple[Path, str]]]:
+    """Loads all profiles/*.yml and *.yaml for check.
+    Returns (valid_profiles, [(path, error_reason), ...]).
+    """
+    profiles_dir = Path(warehouse_root) / "profiles"
+    if not profiles_dir.is_dir():
+        return [], []
+    valid: list[Profile] = []
+    unreadable: list[tuple[Path, str]] = []
+    candidates = sorted(
+        [p for p in profiles_dir.iterdir() if p.is_file() and p.name != "README.md" and p.suffix in (".yml", ".yaml")],
+        key=lambda p: p.name,
     )
+    for p in candidates:
+        prof, err = load_profile_file(p)
+        if prof is not None:
+            valid.append(prof)
+        else:
+            unreadable.append((p, err or "unknown error"))
+    valid.sort(key=lambda x: (x.tier, x.name))
+    return valid, unreadable
 
 
 def list_profiles(warehouse_root: Path) -> list[Profile]:
