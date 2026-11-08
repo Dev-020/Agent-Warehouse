@@ -1,6 +1,6 @@
 ---
 id: template/review-request
-version: 0.1.0
+version: 0.2.0
 status: draft
 summary: Copyable requests for a fresh reviewer subagent — a design review of a plan, and a phase review of code backed by probe scripts.
 applies-to: [codebase]
@@ -90,6 +90,8 @@ name, and a suggested fix. Then the run_all.py output. Keep it under [N] words.
 ## Changelog
 
 ### [Unreleased]
+
+### [0.2.0] - 2026-11-08
 #### Added
 - Variant A item 6 links [[testing]]; Variant B adds a test-quality check (assertions present, new mocks justified, no weakened or skipped assertions, and no order dependence when running new tests alone and with their file).
 
