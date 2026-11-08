@@ -15,8 +15,7 @@ import pytest
 from backlog_cli import TaskError
 from backlog_cli.commands import select_list_items, select_next_item
 from backlog_cli.model import Item
-from conftest import make_repo
-from test_commands_core import _init_repo_with_backlog
+from conftest import _init_repo_with_backlog, make_claim_branch, make_repo, seed_items
 
 
 # ===========================================================================
@@ -129,43 +128,6 @@ def test_pure_select_next_item():
 # ===========================================================================
 
 
-def _write_query_backlog(
-    repo: Path,
-    layout: str,
-    open_entries: str = "",
-    closed_entries: str = "",
-    folders_open: dict[str, str] | None = None,
-    folders_closed: dict[str, str] | None = None,
-) -> None:
-    if layout == "single":
-        single_text = (
-            "# Project Backlog\n\n"
-            "## 📋 In Progress\n\n"
-            "## 📌 Backlog (Open Tasks)\n"
-            f"{open_entries}\n"
-            "## ✅ Completed\n"
-            f"{closed_entries}\n"
-            "## 🧊 Icebox (Not Doing / Rejected)\n"
-        )
-        (repo / "BACKLOG.md").write_text(single_text, encoding="utf-8")
-        subprocess.run(["git", "add", "BACKLOG.md"], cwd=str(repo), check=True)
-    elif layout == "split":
-        open_text = f"## 📋 In Progress\n\n## 📌 Backlog (Open Tasks)\n{open_entries}\n"
-        closed_text = f"## ✅ Completed\n{closed_entries}\n## 🧊 Icebox (Not Doing / Rejected)\n"
-        (repo / "BACKLOG" / "Open.md").write_text(open_text, encoding="utf-8")
-        (repo / "BACKLOG" / "Closed.md").write_text(closed_text, encoding="utf-8")
-        subprocess.run(["git", "add", "BACKLOG/Open.md", "BACKLOG/Closed.md"], cwd=str(repo), check=True)
-    else:
-        if folders_open:
-            for fname, content in folders_open.items():
-                (repo / "BACKLOG" / "open" / fname).write_text(content, encoding="utf-8")
-        if folders_closed:
-            for fname, content in folders_closed.items():
-                (repo / "BACKLOG" / "closed" / fname).write_text(content, encoding="utf-8")
-        subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "setup test items"], cwd=str(repo), check=True)
-
-
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_list_filters_and_default_statuses(tmp_path: Path, run_cli, layout: str):
     """Decision 31: list filters by status and priority, with default Open and In Progress."""
@@ -198,10 +160,10 @@ def test_list_filters_and_default_statuses(tmp_path: Path, run_cli, layout: str)
     f_closed = {
         "TASK-5-task-5.md": '---\nid: "TASK-5"\ntitle: "Task 5"\nstatus: Rejected\npriority: P3\ncreated: 2026-10-05\nresolved: 2026-10-06\n---\n# [TASK-5] Task 5\n',
     }
-    _write_query_backlog(repo, layout, open_entries=open_items, closed_entries=closed_items, folders_open=f_open, folders_closed=f_closed)
+    seed_items(repo, layout, open_entries=open_items, closed_entries=closed_items, folders_open=f_open, folders_closed=f_closed)
 
     # Claim overlay via branch (Decision 43)
-    subprocess.run(["git", "branch", "claim/TASK-3"], cwd=str(repo), check=True)
+    make_claim_branch(repo, "TASK-3")
 
     # 1. Default: shows Open and In Progress (TASK-1, TASK-2, TASK-3, TASK-4)
     res_default = run_cli(repo, "list")
@@ -268,10 +230,10 @@ def test_list_claim_overlay(tmp_path: Path, run_cli, layout: str):
         "TASK-1-unclaimed.md": '---\nid: "TASK-1"\ntitle: "Unclaimed task"\nstatus: Open\npriority: P2\ncreated: 2026-10-01\n---\n# [TASK-1] Unclaimed task\n',
         "TASK-2-claimed.md": '---\nid: "TASK-2"\ntitle: "Claimed task"\nstatus: Open\npriority: P2\ncreated: 2026-10-02\n---\n# [TASK-2] Claimed task\n',
     }
-    _write_query_backlog(repo, layout, open_entries=open_items, folders_open=f_open)
+    seed_items(repo, layout, open_entries=open_items, folders_open=f_open)
 
     # Claim overlay via branch (Decision 43)
-    subprocess.run(["git", "branch", "claim/TASK-2"], cwd=str(repo), check=True)
+    make_claim_branch(repo, "TASK-2")
 
     res = run_cli(repo, "list")
     assert res.exit_code == 0
@@ -306,7 +268,7 @@ def test_list_sort_order(tmp_path: Path, run_cli, layout: str):
         "TASK-C-c.md": '---\nid: "TASK-C"\ntitle: "Task C"\nstatus: Open\npriority: P1\ncreated: 2026-10-05\n---\n# [TASK-C] Task C\n',
         "TASK-D-d.md": '---\nid: "TASK-D"\ntitle: "Task D"\nstatus: Open\npriority: P1\ncreated: 2026-10-05\n---\n# [TASK-D] Task D\n',
     }
-    _write_query_backlog(repo, layout, open_entries=open_items, folders_open=f_open)
+    seed_items(repo, layout, open_entries=open_items, folders_open=f_open)
 
     res = run_cli(repo, "list")
     assert res.exit_code == 0
@@ -328,7 +290,7 @@ def test_list_no_items(tmp_path: Path, run_cli, layout: str):
 - **Created**: 2026-10-01
 """
     f_open = {"TASK-1-only.md": '---\nid: "TASK-1"\ntitle: "Only task"\nstatus: Open\npriority: P2\ncreated: 2026-10-01\n---\n# [TASK-1] Only task\n'}
-    _write_query_backlog(repo, layout, open_entries=open_items, folders_open=f_open)
+    seed_items(repo, layout, open_entries=open_items, folders_open=f_open)
 
     res_none = run_cli(repo, "list", "--priority", "P1")
     assert res_none.exit_code == 0
@@ -352,7 +314,7 @@ def test_next_with_priorities_ties_dependencies(tmp_path: Path, run_cli, layout:
         "TASK-1-p2.md": '---\nid: "TASK-1"\ntitle: "P2 task"\nstatus: Open\npriority: P2\ncreated: 2026-10-01\n---\n# [TASK-1] P2 task\n',
         "TASK-2-p1.md": '---\nid: "TASK-2"\ntitle: "P1 task"\nstatus: Open\npriority: P1\ncreated: 2026-10-02\n---\n# [TASK-2] P1 task\n',
     }
-    _write_query_backlog(repo, layout, open_entries=open_items1, folders_open=f_open1)
+    seed_items(repo, layout, open_entries=open_items1, folders_open=f_open1)
 
     res_p1 = run_cli(repo, "next")
     assert res_p1.exit_code == 0
@@ -371,7 +333,7 @@ def test_next_with_priorities_ties_dependencies(tmp_path: Path, run_cli, layout:
         "TASK-1-p2.md": '---\nid: "TASK-1"\ntitle: "P2 task"\nstatus: Open\npriority: P2\ncreated: 2026-10-01\n---\n# [TASK-1] P2 task\n',
         "TASK-2-p1.md": '---\nid: "TASK-2"\ntitle: "P1 task"\nstatus: Open\npriority: P1\ncreated: 2026-10-02\ndepends_on: ["TASK-1"]\n---\n# [TASK-2] P1 task\n',
     }
-    _write_query_backlog(repo, layout, open_entries=open_items2, folders_open=f_open2)
+    seed_items(repo, layout, open_entries=open_items2, folders_open=f_open2)
 
     res_dep_open = run_cli(repo, "next")
     assert res_dep_open.exit_code == 0
@@ -398,7 +360,7 @@ def test_next_with_priorities_ties_dependencies(tmp_path: Path, run_cli, layout:
         old = repo / "BACKLOG" / "open" / "TASK-1-p2.md"
         if old.exists():
             old.unlink()
-    _write_query_backlog(repo, layout, open_entries=open_items3, closed_entries=closed_items3, folders_open=f_open3, folders_closed=f_closed3)
+    seed_items(repo, layout, open_entries=open_items3, closed_entries=closed_items3, folders_open=f_open3, folders_closed=f_closed3)
 
     res_dep_rej = run_cli(repo, "next")
     assert res_dep_rej.exit_code == 0
@@ -429,7 +391,7 @@ def test_next_no_ready_item_blocked_count(tmp_path: Path, run_cli, layout: str):
         "TASK-1-one.md": '---\nid: "TASK-1"\ntitle: "Blocked one"\nstatus: Open\npriority: P2\ndepends_on: ["MISSING-1"]\n---\n# [TASK-1] Blocked one\n',
         "TASK-2-two.md": '---\nid: "TASK-2"\ntitle: "Blocked two"\nstatus: Open\npriority: P2\ndepends_on: ["MISSING-2"]\n---\n# [TASK-2] Blocked two\n',
     }
-    _write_query_backlog(repo, layout, open_entries=open_items, folders_open=f_open)
+    seed_items(repo, layout, open_entries=open_items, folders_open=f_open)
 
     res_blk = run_cli(repo, "next")
     assert res_blk.exit_code == 0
@@ -453,10 +415,10 @@ def test_next_blocked_count_excludes_claimed(tmp_path: Path, run_cli, layout: st
         "TASK-1-alpha.md": '---\nid: "TASK-1"\ntitle: "Alpha"\nstatus: Open\npriority: P1\ndepends_on: ["TASK-2"]\n---\n# [TASK-1] Alpha\n',
         "TASK-2-beta.md": '---\nid: "TASK-2"\ntitle: "Beta"\nstatus: Open\npriority: P1\ndepends_on: ["TASK-1"]\n---\n# [TASK-2] Beta\n',
     }
-    _write_query_backlog(repo, layout, open_entries=open_items, folders_open=f_open)
+    seed_items(repo, layout, open_entries=open_items, folders_open=f_open)
 
     # Claim TASK-1 via branch (Decision 43)
-    subprocess.run(["git", "branch", "claim/TASK-1"], cwd=str(repo), check=True)
+    make_claim_branch(repo, "TASK-1")
 
     res = run_cli(repo, "next")
     assert res.exit_code == 0

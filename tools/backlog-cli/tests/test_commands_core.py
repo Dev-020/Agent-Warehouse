@@ -7,74 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from conftest import make_repo
-
-
-import shutil
-import tempfile
-
-_TEMPLATE_CACHE: dict[str, Path] = {}
-
-
-def _create_layout_template(layout: str) -> Path:
-    td = Path(tempfile.mkdtemp(prefix=f"tpl_{layout}_"))
-    repo = make_repo(td / "repo")
-    if layout == "single":
-        backlog_text = (
-            "# Project Backlog\n\n"
-            "> **How this backlog is run** (`convention/backlog`)\n"
-            "> - **Layout:** single file\n"
-            "> - **Entry style:** full\n\n"
-            "## 📋 In Progress\n\n"
-            "## 📌 Backlog (Open Tasks)\n\n"
-            "## ✅ Completed\n\n"
-            "## 🧊 Icebox (Not Doing / Rejected)\n"
-        )
-        (repo / "BACKLOG.md").write_text(backlog_text, encoding="utf-8")
-        subprocess.run(["git", "add", "BACKLOG.md"], cwd=str(repo), check=True)
-    elif layout == "split":
-        (repo / ".warehouse.yml").write_text("settings:\n  backlog_layout: split\n", encoding="utf-8")
-        bdir = repo / "BACKLOG"
-        bdir.mkdir(parents=True)
-        (bdir / "00_BACKLOG.md").write_text(
-            "> **How this backlog is run** (`convention/backlog`)\n"
-            "> - **Layout:** split files\n"
-            "> - **Entry style:** full\n",
-            encoding="utf-8",
-        )
-        (bdir / "Open.md").write_text(
-            "## 📋 In Progress\n\n## 📌 Backlog (Open Tasks)\n", encoding="utf-8"
-        )
-        (bdir / "Closed.md").write_text(
-            "## ✅ Completed\n\n## 🧊 Icebox (Not Doing / Rejected)\n", encoding="utf-8"
-        )
-        (repo / ".gitattributes").write_text("BACKLOG/Closed.md merge=union\n", encoding="utf-8")
-        subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
-    elif layout == "folders":
-        (repo / ".warehouse.yml").write_text("settings:\n  backlog_layout: folders\n", encoding="utf-8")
-        bdir = repo / "BACKLOG"
-        bdir.mkdir(parents=True)
-        (bdir / "00_BACKLOG.md").write_text(
-            "> **How this backlog is run** (`convention/backlog`)\n"
-            "> - **Layout:** item folders\n"
-            "> - **Entry style:** full\n",
-            encoding="utf-8",
-        )
-        (bdir / "open").mkdir(parents=True)
-        (bdir / "closed").mkdir(parents=True)
-        (bdir / "open" / ".gitkeep").write_text("", encoding="utf-8")
-        (bdir / "closed" / ".gitkeep").write_text("", encoding="utf-8")
-        subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "add backlog"], cwd=str(repo), check=True)
-    return repo
-
-
-def _init_repo_with_backlog(path: Path, layout: str = "single") -> Path:
-    if layout not in _TEMPLATE_CACHE:
-        _TEMPLATE_CACHE[layout] = _create_layout_template(layout)
-    template = _TEMPLATE_CACHE[layout]
-    shutil.copytree(str(template), str(path), dirs_exist_ok=True)
-    return path
+from conftest import _init_repo_with_backlog, make_repo
 
 
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
