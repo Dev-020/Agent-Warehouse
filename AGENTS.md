@@ -43,6 +43,15 @@ business. Do not add items or notes about it.
   `version:` or create tags yourself; the command bumps the version, finalizes the changelog, commits
   and tags.
 
+## Tests
+
+Follow the warehouse test plan in [[TESTING.md]] (`protocol/test-planning`). Every test written by an agent must follow [[testing]] §10:
+- (a) a test asserts something; a test that only prints is a probe;
+- (b) no new mock without a stated reason (in a code comment or the report);
+- (c) file I/O only in temp dirs, seeds fixed, no real clock;
+- (d) an assertion is never weakened, skipped or deleted without saying so in the report;
+- (e) probes live outside the suite unless promoted on purpose.
+
 ## Other projects
 
 - **Never write inside another project, and never commit there.**
