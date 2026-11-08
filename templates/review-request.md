@@ -51,7 +51,7 @@ Review for:
 3. Crash and restart: what does each step leave behind if the process dies right after it?
 4. Security and trust boundaries: what can an agent or user do that the plan says it can't?
 5. Phasing: is each phase buildable and testable on its own, and small enough for one implementer session?
-6. Tests: does §[verification] name a test for every requirement?
+6. Tests: does §[verification] name a test for every requirement, following [[testing]]?
 7. Anything the plan relies on that nobody has checked against the real tool or API.
 
 Report: findings numbered B1.. (blockers), SF1.. (should-fix), N1.. (nits). Each gives the plan section, the scenario that
@@ -72,6 +72,10 @@ Spec: [plan path, §]. The brief the implementers followed: [brief path] (its "O
 Invariants that must hold: [list].
 Known and accepted limits (don't report these): [list].
 
+Check test quality ([[testing]]): assertions are present (no print-only probes); any new mocks are justified; no assertions were
+weakened, skipped or deleted without a stated reason; and new tests have no order dependence (run the new tests alone and with
+their file).
+
 For every finding, write a probe script in [scratchpad path]/rv_[phase]/ named pNN_<slug>.py that FAILS on the current code
 and would PASS once the finding is fixed. Use the project's fakes and test helpers where you can, and real dependencies only
 where the defect needs them. Add a run_all.py that runs every probe and prints one PASS or FAIL line each and a total.
@@ -86,6 +90,8 @@ name, and a suggested fix. Then the run_all.py output. Keep it under [N] words.
 ## Changelog
 
 ### [Unreleased]
+#### Added
+- Variant A item 6 links [[testing]]; Variant B adds a test-quality check (assertions present, new mocks justified, no weakened or skipped assertions, and no order dependence when running new tests alone and with their file).
 
 ### [0.1.0] - 2026-10-02
 #### Added

@@ -59,7 +59,7 @@ or including `BREAKING CHANGE:` in the body footer with explanation and migratio
 1. **Single conceptual change:** Each commit should encapsulate a single logical change. Do not bundle
    unrelated refactorings, doc edits, and bug fixes into a single omnibus commit.
 2. **Build integrity:** Every commit must leave the repository in a working, buildable state with tests
-   passing. Never commit broken intermediate states.
+   passing (see [[testing]] for what "tests green" means). Never commit broken intermediate states.
 3. **Bisectability:** Commits should be granular enough that `git bisect` can isolate the exact change
    introducing a defect.
 
@@ -88,7 +88,7 @@ Cleanliness is a non-negotiable security and audit boundary:
 Following any change in a repository, agents must follow this structured lifecycle:
 
 ### Step 1: Verify Code and Changes
-- Run automated unit tests, linters, and verification checks.
+- Run automated unit tests, linters, and verification checks (see [[testing]] for what "tests green" means).
 - For warehouse items, run `python _tools/warehouse.py check`.
 - Verify that changes meet the acceptance criteria of the task.
 
@@ -122,6 +122,8 @@ Following any change in a repository, agents must follow this structured lifecyc
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- Linked [[testing]] in §2 (Build integrity) and §4 Step 1 for what "tests green" means.
 
 ### [0.1.0] - 2026-09-15
 #### Added

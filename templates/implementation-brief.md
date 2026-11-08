@@ -114,6 +114,13 @@ If the brief, the plan and the code disagree, stop and report instead of guessin
 - Keep coverage. List every assertion removed or weakened, and why. **Stop and report instead of guessing** if the plan and the code disagree.
 - **Evidence rule:** Every number, measurement, and quote in your report must name the raw file it comes from (per [[phase-staffing]]).
 
+### Tests
+<!-- Per [[testing]] and [[test-planning]]. -->
+- **Targeted test files:** `[list the test files to run while working]`.
+- **Full suite:** `[whether the implementer runs `[full test command]` once at the end of step [last step], or does not run it per the project's test plan]`.
+- **Time budget:** `[under [N] s for this phase's new tests; default suite budget [M] min]`.
+- **Convention rules ([[testing]]):** `[the rules this step must follow, e.g. fakes vs real dependencies (§6), temp dirs only, fixed seeds, no real clock, no sleeps (§7), and agent-test rules §10 (a)–(e)]`.
+
 ## Orchestrator decisions for [Phase] (settled; don't reopen)
 
 [Every choice the plan leaves open for this phase, made now. One numbered item each: the decision in bold, then the detail an implementer needs, then a line of why. Include the edge cases you already know about. Earlier phases' decisions that still hold can be referenced rather than repeated.]
@@ -148,6 +155,8 @@ Commit hash; files changed; tests added and their targeted results ([last step]:
 ## Changelog
 
 ### [Unreleased]
+#### Added
+- A "Tests" subsection under "Rules (all steps)" covering targeted test files, whether the full suite may be run, the time budget, and the [[testing]] rules the step must follow.
 
 ### [0.2.0] - 2026-10-17
 #### Added
