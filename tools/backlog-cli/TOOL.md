@@ -120,4 +120,4 @@ In setups where `.git` is a pointer file referring to an external git directory 
 - **No generated sections**: 0.2 maintains no generated views or task maps.
 - **No external trackers**: does not integrate directly with third-party trackers; external trackers manage their own lifecycles.
 - **No support for repositories reached solely via `GIT_DIR`/`GIT_WORK_TREE`**: requires a `.git` directory or pointer file in the tree.
-- **Test suite duration**: the full test suite is slow (several minutes on Windows).
+- **Test suite duration**: the full test suite runs in ~260 s on Windows (`python -m pytest tools/backlog-cli/tests -q`). Pure unit tests run in under 1 s with `-m "not medium"`.

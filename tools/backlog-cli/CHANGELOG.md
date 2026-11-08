@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- The test suite builds its start state directly via fixtures and seeds instead of CLI arrangement, and runs in 260 s instead of 344 s (182 tests). Pure unit tests are un-marked and run in under 1 s with `-m "not medium"`, while integration tests are marked `medium`. No tool code or behaviour changed.
+
 ## [0.2.0] - 2026-10-26
 ### Added
 - Settings `backlog_layout`, `backlog_file`, and `backlog_dir` read from the project's `.warehouse.yml` manifest.
