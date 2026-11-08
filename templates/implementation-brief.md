@@ -105,7 +105,7 @@ If the brief, the plan and the code disagree, stop and report instead of guessin
 
 ## Rules (all steps)
 
-- **Testing:** while working, run ONLY targeted tests (the files you add or change, with `-k` where it helps). Run `[full test command]` **once**, at the very end of **step [last step] only**. Earlier steps end with their targeted files green.
+- **Testing:** while working, run ONLY targeted tests (the files you add or change, with `-k` where it helps). Full suite: as stated under Tests below. Earlier steps end with their targeted files green.
 - **Speed:** [what to test with fakes and what with real dependencies]. Target: this phase's new tests add **under [N] s** to the suite.
 - One commit per step. [Commit convention], ending `[attribution line]`.
 - Only this phase's worktree. Never the primary tree or the coordinator's files ([list the tracking files]). [Anything else off limits: live services, the running app.]
@@ -113,6 +113,13 @@ If the brief, the plan and the code disagree, stop and report instead of guessin
 - [Behaviour that must stay exactly as it is, and whose tests must stay green unchanged.]
 - Keep coverage. List every assertion removed or weakened, and why. **Stop and report instead of guessing** if the plan and the code disagree.
 - **Evidence rule:** Every number, measurement, and quote in your report must name the raw file it comes from (per [[phase-staffing]]).
+
+### Tests
+<!-- Per [[testing]] and [[test-planning]]. -->
+- **Targeted test files:** `[list the test files to run while working]`.
+- **Full suite:** `[whether the implementer runs <full test command> once at the end of step <last step>, or does not run it per the project's test plan]`.
+- **Time budget:** `[under [N] s for this phase's new tests; default suite budget [M] min]`.
+- **Convention rules ([[testing]]):** `[the rules this step must follow, e.g. fakes vs real dependencies (§6), temp dirs only, fixed seeds, no real clock, no sleeps (§7), and agent-test rules §10 (a)–(e)]`.
 
 ## Orchestrator decisions for [Phase] (settled; don't reopen)
 
@@ -148,6 +155,8 @@ Commit hash; files changed; tests added and their targeted results ([last step]:
 ## Changelog
 
 ### [Unreleased]
+#### Added
+- A "Tests" subsection under "Rules (all steps)" covering targeted test files, whether the full suite may be run, the time budget, and the [[testing]] rules the step must follow.
 
 ### [0.2.0] - 2026-10-17
 #### Added

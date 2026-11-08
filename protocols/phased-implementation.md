@@ -42,7 +42,7 @@ Don't use it for a change one session can finish. Tier 1 (solo) or Tier 2 (autho
 |---|---|---|---|
 | **User** | The human | Every open decision in the plan; approval of the plan; deferring a review finding; compacting the Orchestrator's context (e.g. `/compact`) | — |
 | **Orchestrator** | One long-lived top-level session | The plan, briefs, staffing decisions, checkpoint verification, triage, merges, tracking files, and session logs | Reads implementer or reviewer transcripts; writes feature code itself |
-| **Implementer** | An implementer subagent (continued or fresh per [[phase-staffing]]), on this engine or another | Code, targeted tests, one commit per checkpoint step, a concise report citing raw files | Edits tracking files; runs full test suite before phase's final step; reopens settled decisions |
+| **Implementer** | An implementer subagent (continued or fresh per [[phase-staffing]]), on this engine or another | Code, targeted tests, one commit per checkpoint step, a concise report citing raw files | Edits tracking files; runs full test suite before phase's final step (or at all, if the test plan, [[test-planning]], gives the full run to someone else); reopens settled decisions |
 | **Reviewer** | A fresh subagent per review (always frontier model), on whichever side [[phase-staffing]] assigns | One review: findings with severity, each backed by an executable probe script | Fixes the code it reviews |
 
 Reviewers always run on the strongest frontier reasoning model. Implementer models are selected per phase according to [[phase-staffing]].
@@ -102,7 +102,7 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 6. **Review the phase** with one fresh reviewer on the frontier model (Variant B in [[review-request]]). Each finding carries a severity (blocker, should-fix, nit) and an executable **probe script** that fails on current code and passes when fixed. Probes run via `run_all.py`.
 7. **Triage.** Accept each finding, or adjust the fix and record why. **Blockers cannot be deferred.** Deferring any other finding requires user approval and converts it into a backlog item per [[review-request]].
 8. **Fix step.** Give the implementer a brief from [[fix-round-brief]]: the phase brief still applies, and the triaged findings with their probes are the spec. Confirmed by **re-running the probes**, not a second full review: passing probes demonstrate the defect is fixed. Add a second review pass only if fixes rework complex state machines or a finding cannot be reduced to a probe script.
-9. **Run the full test suite once**, at the end of the last step. Run a second time only if the first run fails.
+9. **Run the full test suite once**, at the end of the last step, as the project's test plan ([[test-planning]], [[testing]]) says. Run a second time only if the first run fails.
 10. **Merge** into the integration branch with `--no-ff`. Remove worktree and branch.
     - **Live check, if the plan or brief has one for this phase** ([[live-check]]). The user runs it from the primary tree, one check at a time. Check the results against the raw evidence before calling it passed, triage what it found per [[issue-triage]], and record its re-run triggers. A failure gets a fix step and a rerun from the first step. If it is a live gate, the next phase doesn't start until it passes.
 11. **Write the hand-over.** Update:
@@ -152,6 +152,8 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- The Implementer role and Stage 2 step 9 note that the full test suite runs as the project's test plan ([[test-planning]], [[testing]]) says.
 
 ### [0.5.0] - 2026-10-18
 #### Added
