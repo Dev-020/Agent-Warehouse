@@ -1,6 +1,6 @@
 ---
 id: template/implementation-brief
-version: 0.2.0
+version: 0.3.0
 status: draft
 summary: Copyable brief for one phase of a phased implementation — rules, staffing row, settled Orchestrator decisions, interfaces, checkpoint steps, tests and the report format, plus an optional section for work another engine does.
 applies-to: [codebase]
@@ -155,6 +155,8 @@ Commit hash; files changed; tests added and their targeted results ([last step]:
 ## Changelog
 
 ### [Unreleased]
+
+### [0.3.0] - 2026-11-08
 #### Added
 - A "Tests" subsection under "Rules (all steps)" covering targeted test files, whether the full suite may be run, the time budget, and the [[testing]] rules the step must follow.
 
