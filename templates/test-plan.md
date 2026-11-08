@@ -74,5 +74,7 @@ Every exception to [[testing]] or to the budgets above is tracked in the [[backl
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.0] - 2026-11-08
 #### Added
 - First draft.
