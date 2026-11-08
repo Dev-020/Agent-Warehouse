@@ -9,7 +9,7 @@ items:
   - convention/backlog@0.2
   - protocol/session-log@0.2
   - protocol/safe-write@0.1
-  - protocol/worktree-claims@0.1
+  - protocol/worktree-claims@0.2
   - tool/backlog-cli@0.2
   - skill/backlog-governance@0.3
   - architecture/codebuff-orchestration@0.1
