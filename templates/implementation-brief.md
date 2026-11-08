@@ -105,7 +105,7 @@ If the brief, the plan and the code disagree, stop and report instead of guessin
 
 ## Rules (all steps)
 
-- **Testing:** while working, run ONLY targeted tests (the files you add or change, with `-k` where it helps). Run `[full test command]` **once**, at the very end of **step [last step] only**. Earlier steps end with their targeted files green.
+- **Testing:** while working, run ONLY targeted tests (the files you add or change, with `-k` where it helps). Full suite: as stated under Tests below. Earlier steps end with their targeted files green.
 - **Speed:** [what to test with fakes and what with real dependencies]. Target: this phase's new tests add **under [N] s** to the suite.
 - One commit per step. [Commit convention], ending `[attribution line]`.
 - Only this phase's worktree. Never the primary tree or the coordinator's files ([list the tracking files]). [Anything else off limits: live services, the running app.]
@@ -117,7 +117,7 @@ If the brief, the plan and the code disagree, stop and report instead of guessin
 ### Tests
 <!-- Per [[testing]] and [[test-planning]]. -->
 - **Targeted test files:** `[list the test files to run while working]`.
-- **Full suite:** `[whether the implementer runs `[full test command]` once at the end of step [last step], or does not run it per the project's test plan]`.
+- **Full suite:** `[whether the implementer runs <full test command> once at the end of step <last step>, or does not run it per the project's test plan]`.
 - **Time budget:** `[under [N] s for this phase's new tests; default suite budget [M] min]`.
 - **Convention rules ([[testing]]):** `[the rules this step must follow, e.g. fakes vs real dependencies (§6), temp dirs only, fixed seeds, no real clock, no sleeps (§7), and agent-test rules §10 (a)–(e)]`.
 

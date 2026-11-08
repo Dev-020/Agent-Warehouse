@@ -73,8 +73,8 @@ Invariants that must hold: [list].
 Known and accepted limits (don't report these): [list].
 
 Check test quality ([[testing]]): assertions are present (no print-only probes); any new mocks are justified; no assertions were
-weakened, skipped or deleted without a stated reason; and new tests have no order dependence (run the new tests alone and with
-their file).
+weakened, skipped or deleted without saying so in the report; and new tests have no order dependence (run the new tests alone and
+with their file).
 
 For every finding, write a probe script in [scratchpad path]/rv_[phase]/ named pNN_<slug>.py that FAILS on the current code
 and would PASS once the finding is fixed. Use the project's fakes and test helpers where you can, and real dependencies only
