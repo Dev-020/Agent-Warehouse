@@ -129,8 +129,9 @@ Before closing, the agent merges `master` (or target branch) into `claim/<ID>` *
   fresh. Never resolve branch conflicts directly on `master`.
 
 ### 4.4. Verification Gate
-All automated tests, link validators, syntax linters, and type checkers must pass before merge. If the gate
-fails, the worktree remains open for debugging.
+The test run required by the project's test plan ([[test-planning]], [[testing]]: no failures that aren't
+already in the backlog), along with link validators, syntax linters, and type checkers, must pass before
+merge. If the gate fails, the worktree remains open for debugging.
 
 ### 4.5. Closing & Atomic Merge (`close`)
 1. Ensure the worktree working tree is completely clean (all implementation committed).
@@ -199,6 +200,8 @@ refreshes).
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- §4.4 (Verification Gate): the test requirement points to the project's test plan ([[test-planning]], [[testing]]).
 
 ### [0.1.2] - 2026-10-17
 #### Changed

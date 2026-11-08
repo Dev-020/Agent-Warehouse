@@ -9,7 +9,7 @@ requires: []
 replaces: null
 ---
 
-<!-- Copy into the project root (default `TESTING.md`) with `warehouse template template/test-plan TESTING.md`. Fill every `[change me]` marker, keep the defaults that fit, and point `AGENTS.md` to this file. Follow [[test-planning]] and [[testing]]. -->
+<!-- Copy into the project root (the protocol's `test_plan_file` setting, default `TESTING.md`) with `warehouse template template/test-plan TESTING.md`. Fill every `[change me]` marker, keep the defaults that fit, and point `AGENTS.md` to this file. Follow [[test-planning]] and [[testing]]. -->
 
 # Test Plan — [change me: Project name]
 
@@ -18,11 +18,14 @@ replaces: null
 
 ## Commands and measured duration
 
+One main suite per independently released component, each with one recorded default command; the time
+budget applies per command ([[testing]] §11).
+
 | Run | Command | Sizes included | Measured duration | Date measured |
 |---|---|---|---|---|
-| **Default run** | `[change me: e.g. pytest -m "not large"]` | Small (plus medium if within budget) | `[change me: e.g. 1m 20s]` | `[change me: YYYY-MM-DD]` |
-| **Full run** | `[change me: e.g. pytest]` | All sizes in the main suite | `[change me: e.g. 3m 45s]` | `[change me: YYYY-MM-DD]` |
-| **Marked larger sets** | `[change me: e.g. pytest -m large, or none]` | Large / end-to-end | `[change me: e.g. 8m 10s, or —]` | `[change me: YYYY-MM-DD]` |
+| **Default run** | `[change me: e.g. <test-runner> --exclude-large]` | Small (plus medium if within budget) | `[change me: e.g. 1m 20s]` | `[change me: YYYY-MM-DD]` |
+| **Full run** | `[change me: e.g. <test-runner>]` | All sizes in the main suite | `[change me: e.g. 3m 45s]` | `[change me: YYYY-MM-DD]` |
+| **Marked larger sets** | `[change me: e.g. <test-runner> --only-large, or none]` | Large / end-to-end | `[change me: e.g. 8m 10s, or —]` | `[change me: YYYY-MM-DD]` |
 
 ## Project testing decisions
 
@@ -36,13 +39,13 @@ Targeted tests only (the test files added or touched by the change). `[change me
 Once before merge, by the implementer. `[change me: e.g. before every release by the maintainer, or once at the end of an implementation by the user]`
 
 ### 4. What blocks a merge or release
-A full run with no failures that aren't already in the [[backlog]]. `[change me: keep default or state gate]`
+A full run with no failures that aren't already in the [[backlog]]. `[change me: keep default or state tighter gate]`
 
 ### 5. Which sizes run by default
-Small, plus medium if they fit the budget. Every non-small test is marked (`[change me: list markers, e.g. @pytest.mark.medium, @pytest.mark.large]`).
+Small, plus medium if they fit the budget. Every non-small test is marked (`[change me: list markers or tags for medium and large tests]`).
 
 ### 6. Time budget of the default run
-**10 minutes** (`60 s` per small test, `300 s` per medium test, `900 s` per large test). Going over budget is recorded in the [[backlog]]. `[change me: keep 10 minutes or set a tighter budget]`
+**10 minutes** per command (Bazel's defaults per test target, applied here per test: `60 s` small, `300 s` medium, `900 s` large). Going over budget is recorded in the [[backlog]]. `[change me: keep 10 minutes or set the project's budget; record any over-budget run under Known exceptions]`
 
 ### 7. Flaky-test procedure
 Quarantine with a [[backlog]] entry naming the test and its failure mode ([[testing]] §8). Never merge on failures that aren't in the backlog; retries may confirm flakiness but are never the fix. `[change me: keep default or add quarantine marker name]`
@@ -53,7 +56,7 @@ The reviewer checks assertions, mocks, skips and order dependence (running new t
 ### 9. What the project's agent instructions repeat (rule f)
 `AGENTS.md` points to this file and repeats [[testing]] §10 (a)–(e):
 - (a) a test asserts something; a test that only prints is a probe;
-- (b) no new mock without a stated reason;
+- (b) no new mock without a stated reason (in a code comment or the report);
 - (c) file I/O only in temp dirs, seeds fixed, no real clock;
 - (d) an assertion is never weakened, skipped or deleted without saying so in the report;
 - (e) probes live outside the suite unless promoted on purpose.
