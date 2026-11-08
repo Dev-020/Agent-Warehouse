@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-08
 ### Changed
 - The test suite builds its start state directly via fixtures and seeds instead of CLI arrangement, and is somewhat faster: 182 tests in 340.66 s against 375.29 s before, on the same Windows laptop (single runs there vary by up to ~25%). Tests also ignore the user's global and system git config. Pure unit tests are un-marked and run in under 1 s with `-m "not medium"`, while integration tests are marked `medium`. No tool code or behaviour changed.
 
