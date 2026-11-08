@@ -1,6 +1,6 @@
 ---
 id: protocol/worktree-claims
-version: 0.1.2
+version: 0.2.0
 status: draft
 summary: Multi-agent git worktree claims, reservation semantics, branch claims, atomic locks, merge gate, and conflict avoidance across concurrent sessions.
 applies-to: [vault, codebase]
@@ -200,6 +200,8 @@ refreshes).
 ## Changelog
 
 ### [Unreleased]
+
+### [0.2.0] - 2026-11-08
 #### Changed
 - §4.4 (Verification Gate): the test requirement points to the project's test plan ([[test-planning]], [[testing]]).
 
