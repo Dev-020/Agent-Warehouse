@@ -1,6 +1,6 @@
 ---
 id: protocol/phased-implementation
-version: 0.5.0
+version: 0.5.1
 status: draft
 summary: Plan, review, then build in phases with fresh or continued subagents, checkpoint commits, probe-backed reviews, one full test run per phase, and a session-log hand-over between phases.
 applies-to: [codebase]
@@ -152,6 +152,8 @@ re-read → staff phase → brief → worktree → [ implement step → verify c
 ## Changelog
 
 ### [Unreleased]
+
+### [0.5.1] - 2026-11-08
 #### Changed
 - The Implementer role and Stage 2 step 9 note that the full test suite runs as the project's test plan ([[test-planning]], [[testing]]) says.
 
