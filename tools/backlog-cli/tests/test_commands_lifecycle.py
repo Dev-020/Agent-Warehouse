@@ -6,16 +6,22 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from conftest import make_repo
-from test_commands_core import _assert_unrelated_files_unchanged, _init_repo_with_backlog, _install_failing_hook, _setup_unrelated_files
+from conftest import _init_repo_with_backlog, make_claim, make_claim_branch, make_repo, seed_items
+from test_commands_core import _assert_unrelated_files_unchanged, _install_failing_hook, _setup_unrelated_files
 
 
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_reject_and_cancel_move_to_icebox(tmp_path: Path, run_cli, layout: str):
     """Decision 29: reject and cancel move entries to Icebox/closed with Resolved and reason."""
     repo = _init_repo_with_backlog(tmp_path / f"repo_rc_{layout}", layout=layout)
-    run_cli(repo, "open", "First task", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "open", "Second task", "--prefix", "TASK")
+    seed_items(
+        repo,
+        layout,
+        [
+            {"id": "TASK-1", "title": "First task"},
+            {"id": "TASK-2", "title": "Second task"},
+        ],
+    )
 
     # 1. Reject TASK-1
     res_reject = run_cli(repo, "reject", "TASK-1", "--reason", "Not needed anymore")
@@ -90,12 +96,15 @@ def test_reject_and_cancel_move_to_icebox(tmp_path: Path, run_cli, layout: str):
 def test_reject_and_cancel_refuse_claimed_and_non_open(tmp_path: Path, run_cli, layout: str):
     """Decision 29: refuse claimed items and items that are not Open."""
     repo = _init_repo_with_backlog(tmp_path / f"repo_refuse_{layout}", layout=layout)
-    run_cli(repo, "open", "Task to claim", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "open", "Task to close", "--prefix", "TASK")
-
-    # Claim TASK-1
-    res_claim = run_cli(repo, "claim", "TASK-1")
-    assert res_claim.exit_code == 0
+    seed_items(
+        repo,
+        layout,
+        [
+            {"id": "TASK-1", "title": "Task to claim"},
+            {"id": "TASK-2", "title": "Task to close"},
+        ],
+    )
+    make_claim(repo, "TASK-1", layout=layout)
 
     # Claimed item refused
     res_rej_claimed = run_cli(repo, "reject", "TASK-1", "--reason", "Cannot do this")
@@ -124,29 +133,14 @@ def test_reject_and_cancel_refuse_claimed_and_non_open(tmp_path: Path, run_cli, 
 def test_dependents_updated_in_same_commit(tmp_path: Path, run_cli, layout: str):
     """Decision 29: dependents get note in same commit, warnings for claim-branch-only items."""
     repo = _init_repo_with_backlog(tmp_path / f"repo_dep_{layout}", layout=layout)
-    run_cli(repo, "open", "Blocker task", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "open", "Dependent task", "--prefix", "TASK")
-
-    # Set dependency on TASK-1 in TASK-2
-    if layout == "single":
-        fpath = repo / "BACKLOG.md"
-        content = fpath.read_text(encoding="utf-8")
-        content = content.replace("### [TASK-2] Dependent task\n", "### [TASK-2] Dependent task\n- **Depends on**: [TASK-1]\n")
-        fpath.write_text(content, encoding="utf-8")
-        subprocess.run(["git", "add", "BACKLOG.md"], cwd=str(repo), check=True)
-    elif layout == "split":
-        fpath = repo / "BACKLOG" / "Open.md"
-        content = fpath.read_text(encoding="utf-8")
-        content = content.replace("### [TASK-2] Dependent task\n", "### [TASK-2] Dependent task\n- **Depends on**: [TASK-1]\n")
-        fpath.write_text(content, encoding="utf-8")
-        subprocess.run(["git", "add", "BACKLOG/Open.md"], cwd=str(repo), check=True)
-    else:
-        fpath = next((repo / "BACKLOG" / "open").glob("TASK-2-*.md"))
-        content = fpath.read_text(encoding="utf-8")
-        content = content.replace("status: Open\n", 'status: Open\ndepends_on: ["TASK-1"]\n')
-        fpath.write_text(content, encoding="utf-8")
-        subprocess.run(["git", "add", str(fpath)], cwd=str(repo), check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "add dependency"], cwd=str(repo), check=True)
+    seed_items(
+        repo,
+        layout,
+        [
+            {"id": "TASK-1", "title": "Blocker task"},
+            {"id": "TASK-2", "title": "Dependent task", "depends_on": ["TASK-1"]},
+        ],
+    )
 
     head_before = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo), capture_output=True, text=True).stdout.strip()
 
@@ -172,6 +166,7 @@ def test_dependents_updated_in_same_commit(tmp_path: Path, run_cli, layout: str)
         content = (repo / "BACKLOG" / "Open.md").read_text(encoding="utf-8")
         assert expected_note in content
     else:
+        fpath = next((repo / "BACKLOG" / "open").glob("*TASK-2*"))
         content = fpath.read_text(encoding="utf-8")
         assert expected_note in content
 
@@ -180,7 +175,7 @@ def test_dependents_updated_in_same_commit(tmp_path: Path, run_cli, layout: str)
 def test_reject_leaves_files_untouched_on_hook_failure(tmp_path: Path, run_cli, layout: str):
     """Decision 29 / Invariant: pre-commit hook failure restores files cleanly."""
     repo = _init_repo_with_backlog(tmp_path / f"repo_hook_{layout}", layout=layout)
-    run_cli(repo, "open", "Task to reject", "--prefix", "TASK", "--new-prefix")
+    seed_items(repo, layout, [{"id": "TASK-1", "title": "Task to reject"}])
 
     mod_file, staged_file = _setup_unrelated_files(repo)
 
@@ -213,8 +208,14 @@ def test_reject_leaves_files_untouched_on_hook_failure(tmp_path: Path, run_cli, 
 def test_amend_note_unclaimed_and_claimed(tmp_path: Path, run_cli, layout: str):
     """Decision 30: amend --note writes to primary tree when unclaimed, worktree when claimed."""
     repo = _init_repo_with_backlog(tmp_path / f"repo_amend_{layout}", layout=layout)
-    run_cli(repo, "open", "Unclaimed task", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "open", "Claimed task", "--prefix", "TASK")
+    seed_items(
+        repo,
+        layout,
+        [
+            {"id": "TASK-1", "title": "Unclaimed task"},
+            {"id": "TASK-2", "title": "Claimed task"},
+        ],
+    )
 
     # 1. Amend unclaimed task -> writes in primary tree
     res_amend1 = run_cli(repo, "amend", "TASK-1", "--note", "Note on unclaimed")
@@ -225,9 +226,7 @@ def test_amend_note_unclaimed_and_claimed(tmp_path: Path, run_cli, layout: str):
     assert log_amend1 == "chore(backlog): amend [TASK-1]"
 
     # 2. Claim TASK-2
-    res_claim = run_cli(repo, "claim", "TASK-2")
-    assert res_claim.exit_code == 0
-    wt_dir = (tmp_path / "worktrees" / "TASK-2").resolve()
+    wt_dir = make_claim(repo, "TASK-2", layout=layout)
 
     primary_head_before = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo), capture_output=True, text=True).stdout.strip()
 
@@ -250,7 +249,7 @@ def test_amend_note_unclaimed_and_claimed(tmp_path: Path, run_cli, layout: str):
 def test_amend_priority_validation(tmp_path: Path, run_cli, layout: str):
     """Decision 30: --priority requires --note, refuses same priority, refuses closed."""
     repo = _init_repo_with_backlog(tmp_path / f"repo_pval_{layout}", layout=layout)
-    run_cli(repo, "open", "Task validation", "--prefix", "TASK", "--new-prefix")
+    seed_items(repo, layout, [{"id": "TASK-1", "title": "Task validation"}])
 
     # 1. --priority without --note refused
     res_no_note = run_cli(repo, "amend", "TASK-1", "--priority", "P1")
@@ -273,9 +272,15 @@ def test_amend_priority_validation(tmp_path: Path, run_cli, layout: str):
 def test_amend_priority_moves_open_leaves_in_progress(tmp_path: Path, run_cli, layout: str):
     """Decision 30: Open item priority change re-orders in Open tasks; In Progress item stays in place."""
     repo = _init_repo_with_backlog(tmp_path / f"repo_pmove_{layout}", layout=layout)
-    run_cli(repo, "open", "Alpha task", "--prefix", "TASK", "--new-prefix", "--priority", "P1")
-    run_cli(repo, "open", "Beta task", "--prefix", "TASK", "--priority", "P2")
-    run_cli(repo, "open", "Gamma task", "--prefix", "TASK", "--priority", "P3")
+    seed_items(
+        repo,
+        layout,
+        [
+            {"id": "TASK-1", "title": "Alpha task", "priority": "P1"},
+            {"id": "TASK-2", "title": "Beta task", "priority": "P2"},
+            {"id": "TASK-3", "title": "Gamma task", "priority": "P3"},
+        ],
+    )
 
     # Change Gamma (P3) to P1 -> moves into P1 group
     res_p1 = run_cli(repo, "amend", "TASK-3", "--priority", "P1", "--note", "Escalated")
@@ -332,21 +337,16 @@ def test_amend_priority_moves_open_leaves_in_progress(tmp_path: Path, run_cli, l
 def test_claimed_dependent_note_goes_to_worktree(tmp_path: Path, run_cli):
     """Decision 36: Rejecting/cancelling dependency notes claimed dependent in its worktree, not on main."""
     repo = _init_repo_with_backlog(tmp_path / "repo_dep_wt", layout="single")
-    run_cli(repo, "open", "Base task")
-    run_cli(repo, "open", "Dependent task")
+    seed_items(
+        repo,
+        "single",
+        [
+            {"id": "#001", "title": "Base task"},
+            {"id": "#002", "title": "Dependent task", "depends_on": ["#001"]},
+        ],
+    )
 
-    # Add Depends on to #002 on main before claiming
-    bf = repo / "BACKLOG.md"
-    content = bf.read_text(encoding="utf-8")
-    content = content.replace("### [#002] Dependent task\n- **Status**: `Open` | **Priority**: `P2`\n- **Created**:", "### [#002] Dependent task\n- **Status**: `Open` | **Priority**: `P2`\n- **Depends on**: #001\n- **Created**:")
-    bf.write_text(content, encoding="utf-8")
-    subprocess.run(["git", "add", "BACKLOG.md"], cwd=str(repo), check=True)
-    subprocess.run(["git", "commit", "-qm", "add dep"], cwd=str(repo), check=True)
-
-    # Claim #002
-    res_claim = run_cli(repo, "claim", "#002")
-    assert res_claim.exit_code == 0
-    wt = tmp_path / "worktrees" / "002"
+    wt = make_claim(repo, "#002", layout="single")
     (wt / "w.txt").write_text("work\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=str(wt), check=True)
     subprocess.run(["git", "commit", "-qm", "work"], cwd=str(wt), check=True)
@@ -380,24 +380,15 @@ def test_claimed_dependent_note_goes_to_worktree(tmp_path: Path, run_cli):
 def test_claimed_dependent_warning_when_no_worktree(tmp_path: Path, run_cli):
     """Decision 36: Warning appears with exact amend command when claimed dependent has no worktree."""
     repo = _init_repo_with_backlog(tmp_path / "repo_dep_nowt", layout="single")
-    run_cli(repo, "open", "Base task")
-    run_cli(repo, "open", "Dependent task")
-
-    bf = repo / "BACKLOG.md"
-    content = bf.read_text(encoding="utf-8")
-    content = content.replace("### [#002] Dependent task\n- **Status**: `Open` | **Priority**: `P2`\n- **Created**:", "### [#002] Dependent task\n- **Status**: `Open` | **Priority**: `P2`\n- **Depends on**: #001\n- **Created**:")
-    bf.write_text(content, encoding="utf-8")
-    subprocess.run(["git", "add", "BACKLOG.md"], cwd=str(repo), check=True)
-    subprocess.run(["git", "commit", "-qm", "add dep"], cwd=str(repo), check=True)
-
-    # Claim #002
-    run_cli(repo, "claim", "#002")
-    wt = tmp_path / "worktrees" / "002"
-
-    # Remove worktree to simulate missing worktree
-    import shutil
-    shutil.rmtree(wt)
-    subprocess.run(["git", "worktree", "prune"], cwd=str(repo), check=True)
+    seed_items(
+        repo,
+        "single",
+        [
+            {"id": "#001", "title": "Base task"},
+            {"id": "#002", "title": "Dependent task", "depends_on": ["#001"]},
+        ],
+    )
+    make_claim_branch(repo, "002")
 
     # Reject #001 on main
     res_rej = run_cli(repo, "reject", "#001", "--reason", "cancelled feature")
@@ -409,7 +400,7 @@ def test_claimed_dependent_warning_when_no_worktree(tmp_path: Path, run_cli):
 def test_reject_folder_item_uncommitted_files_refuses(tmp_path: Path, run_cli):
     """Decision 37 (B1): reject refuses if folder item has uncommitted edits or untracked files."""
     repo = _init_repo_with_backlog(tmp_path / "repo_folder_dirty", layout="folders")
-    run_cli(repo, "open", "Alpha")
+    seed_items(repo, "folders", [{"id": "#001", "title": "Alpha"}])
     o = repo / "BACKLOG" / "open"
     f = next(o.glob("001-*.md"))
     folder = o / f.stem
@@ -443,20 +434,19 @@ def test_reject_folder_item_uncommitted_files_refuses(tmp_path: Path, run_cli):
 def test_reject_warns_all_branch_dependents_missing_from_primary(tmp_path: Path, run_cli):
     """Decision 39 (S2): reject warns about items on any claim branch that depend on rejected ID."""
     repo = _init_repo_with_backlog(tmp_path / "repo_warn_branch", layout="single")
-    run_cli(repo, "open", "Alpha")
-    run_cli(repo, "open", "Beta")
-    res_claim = run_cli(repo, "claim", "#002")
-    assert res_claim.exit_code == 0
-    wt = (tmp_path / "worktrees" / "002").resolve()
-
-    # Open Gamma (#003) on the branch
-    res_open = run_cli(wt, "open", "Gamma on the branch")
-    assert res_open.exit_code == 0
-    b = wt / "BACKLOG.md"
-    t = b.read_text(encoding="utf-8").replace(
-        "### [#003] Gamma on the branch\n",
-        "### [#003] Gamma on the branch\n- **Depends on**: #001\n",
+    seed_items(
+        repo,
+        "single",
+        [
+            {"id": "#001", "title": "Alpha"},
+            {"id": "#002", "title": "Beta"},
+        ],
     )
+    wt = make_claim(repo, "#002", layout="single")
+
+    # Seed Gamma (#003) on the branch
+    b = wt / "BACKLOG.md"
+    t = b.read_text(encoding="utf-8") + "\n### [#003] Gamma on the branch\n- **Status**: `Open` | **Priority**: `P2`\n- **Depends on**: #001\n- **Created**: 2026-10-01\n"
     b.write_text(t, encoding="utf-8")
     subprocess.run(["git", "commit", "-qam", "dep"], cwd=str(wt), check=True)
 

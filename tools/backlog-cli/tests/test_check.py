@@ -21,6 +21,7 @@ from backlog_cli.check import (
     format_duplicate_error,
 )
 from test_commands_core import _init_repo_with_backlog
+from conftest import make_claim, seed_items
 
 
 # ===========================================================================
@@ -184,10 +185,9 @@ Done
 def test_close_blocked_by_new_duplicate_single(tmp_path: Path, run_cli):
     """A new duplicate blocks close on single-file layout, naming every copy."""
     repo = _init_repo_with_backlog(tmp_path / "repo_single", layout="single")
-    run_cli(repo, "open", "Task to claim", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "claim", "TASK-1")
+    seed_items(repo, "single", [{"id": "TASK-1", "title": "Task to claim"}])
+    wt_dir = make_claim(repo, "TASK-1", layout="single")
 
-    wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
     # Introduce duplicate TASK-1 entry in worktree's BACKLOG.md
     bfile = wt_dir / "BACKLOG.md"
     content = bfile.read_text(encoding="utf-8")
@@ -215,10 +215,9 @@ def test_close_blocked_by_new_duplicate_single(tmp_path: Path, run_cli):
 def test_close_blocked_by_new_duplicate_split(tmp_path: Path, run_cli):
     """A new duplicate blocks close on split layout, naming every copy."""
     repo = _init_repo_with_backlog(tmp_path / "repo_split", layout="split")
-    run_cli(repo, "open", "Task to claim", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "claim", "TASK-1")
+    seed_items(repo, "split", [{"id": "TASK-1", "title": "Task to claim"}])
+    wt_dir = make_claim(repo, "TASK-1", layout="split")
 
-    wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
     # Introduce duplicate entry in worktree's BACKLOG/Open.md
     open_file = wt_dir / "BACKLOG" / "Open.md"
     content = open_file.read_text(encoding="utf-8")
@@ -242,10 +241,8 @@ def test_close_blocked_by_new_duplicate_split(tmp_path: Path, run_cli):
 def test_close_blocked_by_new_duplicate_folders(tmp_path: Path, run_cli):
     """A new duplicate blocks close on folders layout, naming every copy."""
     repo = _init_repo_with_backlog(tmp_path / "repo_folders", layout="folders")
-    run_cli(repo, "open", "Task to claim", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "claim", "TASK-1")
-
-    wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
+    seed_items(repo, "folders", [{"id": "TASK-1", "title": "Task to claim"}])
+    wt_dir = make_claim(repo, "TASK-1", layout="folders")
     # Create duplicate item file with id: "TASK-1"
     dup_file = wt_dir / "BACKLOG" / "open" / "TASK-1-duplicate.md"
     dup_file.write_text(
@@ -277,16 +274,16 @@ def test_close_allows_old_duplicate_on_base(tmp_path: Path, run_cli):
         "- **Created**: 2026-10-01\n\n"
         "### [OLD-1] Second copy on base\n"
         "- **Status**: `Open` | **Priority**: `P2`\n"
-        "- **Created**: 2026-10-02\n"
+        "- **Created**: 2026-10-02\n\n"
+        "### [TASK-1] New task\n"
+        "- **Status**: `Open` | **Priority**: `P2`\n"
+        "- **Created**: 2026-10-03\n"
     )
     bfile.write_text(content + old_dup, encoding="utf-8")
     subprocess.run(["git", "commit", "-am", "pre-existing duplicate on base"], cwd=str(repo), check=True)
 
-    # Open and claim a new task
-    run_cli(repo, "open", "New task", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "claim", "TASK-1")
+    wt_dir = make_claim(repo, "TASK-1", layout="single")
 
-    wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
     (wt_dir / "work.txt").write_text("done\n", encoding="utf-8")
     subprocess.run(["git", "add", "work.txt"], cwd=str(wt_dir), check=True)
     subprocess.run(["git", "commit", "-m", "complete work"], cwd=str(wt_dir), check=True)
@@ -300,10 +297,9 @@ def test_close_allows_old_duplicate_on_base(tmp_path: Path, run_cli):
 def test_close_merges_after_fixing_duplicate_in_worktree(tmp_path: Path, run_cli):
     """After fixing the duplicate in the worktree and committing, re-running close merges."""
     repo = _init_repo_with_backlog(tmp_path / "repo_fix_dup", layout="single")
-    run_cli(repo, "open", "Task to claim", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "claim", "TASK-1")
+    seed_items(repo, "single", [{"id": "TASK-1", "title": "Task to claim"}])
+    wt_dir = make_claim(repo, "TASK-1", layout="single")
 
-    wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
     bfile = wt_dir / "BACKLOG.md"
     original_content = bfile.read_text(encoding="utf-8")
 
@@ -342,23 +338,19 @@ def test_close_merges_after_fixing_duplicate_in_worktree(tmp_path: Path, run_cli
 def test_close_warns_on_unticked_criteria_and_merges(tmp_path: Path, run_cli):
     """Unticked criteria warn and don't block close."""
     repo = _init_repo_with_backlog(tmp_path / "repo_unticked", layout="single")
-    run_cli(
+    seed_items(
         repo,
-        "open",
-        "Task with criteria",
-        "--prefix",
-        "TASK",
-        "--new-prefix",
-        "--criterion",
-        "Criterion one",
-        "--criterion",
-        "Criterion two",
-        "--criterion",
-        "Criterion three",
+        "single",
+        [
+            {
+                "id": "TASK-1",
+                "title": "Task with criteria",
+                "criteria": ["Criterion one", "Criterion two", "Criterion three"],
+            }
+        ],
     )
-    run_cli(repo, "claim", "TASK-1")
+    wt_dir = make_claim(repo, "TASK-1", layout="single")
 
-    wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
     # In worktree, tick #1 only; leave #2 and #3 unticked
     bfile = wt_dir / "BACKLOG.md"
     content = bfile.read_text(encoding="utf-8")
@@ -376,21 +368,19 @@ def test_close_warns_on_unticked_criteria_and_merges(tmp_path: Path, run_cli):
 def test_close_compact_entry_no_warning(tmp_path: Path, run_cli):
     """Compact entries get no warning when closed."""
     repo = _init_repo_with_backlog(tmp_path / "repo_compact", layout="single")
-    run_cli(
+    seed_items(
         repo,
-        "open",
-        "Compact task",
-        "--prefix",
-        "TASK",
-        "--new-prefix",
-        "--style",
-        "compact",
-        "--criterion",
-        "Done when tests pass",
+        "single",
+        [
+            {
+                "id": "TASK-1",
+                "title": "Compact task",
+                "style": "compact",
+                "criteria": ["Done when tests pass"],
+            }
+        ],
     )
-    run_cli(repo, "claim", "TASK-1")
-
-    wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
+    wt_dir = make_claim(repo, "TASK-1", layout="single")
     (wt_dir / "file.txt").write_text("ok\n", encoding="utf-8")
     subprocess.run(["git", "add", "file.txt"], cwd=str(wt_dir), check=True)
     subprocess.run(["git", "commit", "-m", "work"], cwd=str(wt_dir), check=True)
@@ -413,11 +403,12 @@ def test_close_duplicate_check_subfolder_single(tmp_path: Path, run_cli):
     subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
     subprocess.run(["git", "commit", "-m", "move backlog to docs/"], cwd=str(repo), check=True)
 
-    run_cli(repo, "open", "First task", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "open", "Second task", "--prefix", "TASK")
-    run_cli(repo, "claim", "TASK-2")
+    seed_items(repo, "single", [
+        {"id": "TASK-1", "title": "First task"},
+        {"id": "TASK-2", "title": "Second task"},
+    ])
+    wt_dir = make_claim(repo, "TASK-2", layout="single")
 
-    wt_dir = (tmp_path / "worktrees" / "TASK-2").resolve()
     bfile = wt_dir / "docs" / "BACKLOG.md"
     content = bfile.read_text(encoding="utf-8")
     content = content.replace(
@@ -446,11 +437,12 @@ def test_close_duplicate_check_subfolder_split(tmp_path: Path, run_cli):
     subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
     subprocess.run(["git", "commit", "-m", "move split backlog to docs/"], cwd=str(repo), check=True)
 
-    run_cli(repo, "open", "First task", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "open", "Second task", "--prefix", "TASK")
-    run_cli(repo, "claim", "TASK-2")
+    seed_items(repo, "split", [
+        {"id": "TASK-1", "title": "First task"},
+        {"id": "TASK-2", "title": "Second task"},
+    ])
+    wt_dir = make_claim(repo, "TASK-2", layout="split")
 
-    wt_dir = (tmp_path / "worktrees" / "TASK-2").resolve()
     open_file = wt_dir / "docs" / "BACKLOG" / "Open.md"
     content = open_file.read_text(encoding="utf-8")
     open_file.write_text(
@@ -477,11 +469,12 @@ def test_close_duplicate_check_subfolder_folders(tmp_path: Path, run_cli):
     subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
     subprocess.run(["git", "commit", "-m", "move folders backlog to docs/"], cwd=str(repo), check=True)
 
-    run_cli(repo, "open", "First task", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "open", "Second task", "--prefix", "TASK")
-    run_cli(repo, "claim", "TASK-2")
+    seed_items(repo, "folders", [
+        {"id": "TASK-1", "title": "First task"},
+        {"id": "TASK-2", "title": "Second task"},
+    ])
+    wt_dir = make_claim(repo, "TASK-2", layout="folders")
 
-    wt_dir = (tmp_path / "worktrees" / "TASK-2").resolve()
     dup_file = wt_dir / "docs" / "BACKLOG" / "open" / "TASK-1-dup.md"
     dup_file.write_text(
         '---\nid: "TASK-1"\ntitle: Dup\nstatus: Open\npriority: P2\ncreated: 2026-10-20\n---\n\n# [TASK-1] Dup\n',
@@ -500,11 +493,12 @@ def test_close_duplicate_check_subfolder_folders(tmp_path: Path, run_cli):
 def test_close_rerun_syncs_moved_base(tmp_path: Path, run_cli):
     """B2 regression: re-run of close syncs moved base and detects duplicate."""
     repo = _init_repo_with_backlog(tmp_path / "repo_rerun_sync", layout="folders")
-    run_cli(repo, "open", "Alpha", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "open", "Beta", "--prefix", "TASK")
-    run_cli(repo, "claim", "TASK-2")
+    seed_items(repo, "folders", [
+        {"id": "TASK-1", "title": "Alpha"},
+        {"id": "TASK-2", "title": "Beta"},
+    ])
+    wt_dir = make_claim(repo, "TASK-2", layout="folders")
 
-    wt_dir = (tmp_path / "worktrees" / "TASK-2").resolve()
     dup_file = wt_dir / "BACKLOG" / "open" / "TASK-1-dup.md"
     dup_file.write_text(
         '---\nid: "TASK-1"\ntitle: Dup\nstatus: Open\npriority: P2\ncreated: 2026-10-20\n---\n\n# [TASK-1] Dup\n',
@@ -547,11 +541,11 @@ def test_close_rerun_syncs_moved_base(tmp_path: Path, run_cli):
 def test_close_indented_heading_in_note_not_false_positive(tmp_path: Path, run_cli):
     """S1 regression: indented heading in note or code block does not trigger false positive."""
     repo = _init_repo_with_backlog(tmp_path / "repo_indented_note", layout="single")
-    run_cli(repo, "open", "Alpha", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "open", "Beta", "--prefix", "TASK")
-    run_cli(repo, "claim", "TASK-2")
-
-    wt_dir = (tmp_path / "worktrees" / "TASK-2").resolve()
+    seed_items(repo, "single", [
+        {"id": "TASK-1", "title": "Alpha"},
+        {"id": "TASK-2", "title": "Beta"},
+    ])
+    wt_dir = make_claim(repo, "TASK-2", layout="single")
     bfile = wt_dir / "BACKLOG.md"
     t = bfile.read_text(encoding="utf-8")
     anchor = "### [TASK-2] Beta\n"

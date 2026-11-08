@@ -154,10 +154,21 @@ def _format_entry_md(it: dict[str, Any]) -> str:
         lines.append(f"**Why:** {it['why']}")
     if "wanted" in it and it["wanted"]:
         lines.append(f"**Wanted:** {it['wanted']}")
+    if "criteria" in it and it["criteria"]:
+        if it.get("style") == "compact":
+            lines.append(f"*Done when:* {it['criteria'][0]}")
+        else:
+            lines.append("#### Acceptance Criteria")
+            for idx, c in enumerate(it["criteria"], 1):
+                lines.append(f"- [ ] #{idx} {c}")
     if "notes" in it and it["notes"]:
         lines.append("#### Notes")
         for n in it["notes"]:
             lines.append(f"- {n}")
+    if it.get("style") != "compact":
+        lines.append("#### Outcome")
+        if "outcome" in it and it["outcome"]:
+            lines.append(it["outcome"])
     return "\n".join(lines) + "\n"
 
 
@@ -208,6 +219,7 @@ def seed_items(
     folders_closed: dict[str, str] | None = None,
 ) -> None:
     """Seed items directly into repo backlog files for any layout, then make one commit."""
+    settings = load_settings(repo)
     if items is not None:
         open_parts = []
         in_prog_parts = []
@@ -249,7 +261,7 @@ def seed_items(
                 + "## 🧊 Icebox (Not Doing / Rejected)\n"
                 + ("\n" + "".join(ice_parts) if ice_parts else "")
             )
-            (repo / "BACKLOG.md").write_text(single_text, encoding="utf-8")
+            settings.backlog_file.write_text(single_text, encoding="utf-8")
         elif layout == "split":
             open_text = (
                 "## 📋 In Progress\n"
@@ -263,13 +275,13 @@ def seed_items(
                 + "## 🧊 Icebox (Not Doing / Rejected)\n"
                 + ("\n" + "".join(ice_parts) if ice_parts else "")
             )
-            (repo / "BACKLOG" / "Open.md").write_text(open_text, encoding="utf-8")
-            (repo / "BACKLOG" / "Closed.md").write_text(closed_text, encoding="utf-8")
+            (settings.backlog_dir / "Open.md").write_text(open_text, encoding="utf-8")
+            (settings.backlog_dir / "Closed.md").write_text(closed_text, encoding="utf-8")
         else:  # folders
             for fn, cnt in f_open.items():
-                (repo / "BACKLOG" / "open" / fn).write_text(cnt, encoding="utf-8")
+                (settings.backlog_dir / "open" / fn).write_text(cnt, encoding="utf-8")
             for fn, cnt in f_closed.items():
-                (repo / "BACKLOG" / "closed" / fn).write_text(cnt, encoding="utf-8")
+                (settings.backlog_dir / "closed" / fn).write_text(cnt, encoding="utf-8")
     else:
         # Caller provided pre-formatted strings/dicts
         if layout == "single":
@@ -282,19 +294,19 @@ def seed_items(
                 f"{closed_entries}\n"
                 "## 🧊 Icebox (Not Doing / Rejected)\n"
             )
-            (repo / "BACKLOG.md").write_text(single_text, encoding="utf-8")
+            settings.backlog_file.write_text(single_text, encoding="utf-8")
         elif layout == "split":
             open_text = f"## 📋 In Progress\n\n## 📌 Backlog (Open Tasks)\n{open_entries}\n"
             closed_text = f"## ✅ Completed\n{closed_entries}\n## 🧊 Icebox (Not Doing / Rejected)\n"
-            (repo / "BACKLOG" / "Open.md").write_text(open_text, encoding="utf-8")
-            (repo / "BACKLOG" / "Closed.md").write_text(closed_text, encoding="utf-8")
+            (settings.backlog_dir / "Open.md").write_text(open_text, encoding="utf-8")
+            (settings.backlog_dir / "Closed.md").write_text(closed_text, encoding="utf-8")
         else:
             if folders_open:
                 for fname, content in folders_open.items():
-                    (repo / "BACKLOG" / "open" / fname).write_text(content, encoding="utf-8")
+                    (settings.backlog_dir / "open" / fname).write_text(content, encoding="utf-8")
             if folders_closed:
                 for fname, content in folders_closed.items():
-                    (repo / "BACKLOG" / "closed" / fname).write_text(content, encoding="utf-8")
+                    (settings.backlog_dir / "closed" / fname).write_text(content, encoding="utf-8")
 
     subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
     subprocess.run(["git", "commit", "-q", "-m", "seed test items"], cwd=str(repo), check=True)

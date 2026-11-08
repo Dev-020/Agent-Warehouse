@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from backlog_cli.gitops import GIT_DIR_MSG, NO_GIT_MSG
-from test_commands_core import _init_repo_with_backlog
+from conftest import _init_repo_with_backlog, seed_items
 
 
 def test_separate_git_dir_pointer_file_cycle(tmp_path: Path, run_cli):
@@ -79,8 +79,8 @@ def test_git_dir_env_refusals_and_open(tmp_path: Path, monkeypatch, run_cli):
     repo = _init_repo_with_backlog(tmp_path / "repo_gitdir")
     dot_git = (repo / ".git").resolve()
 
-    # Open initial task without GIT_DIR
-    run_cli(repo, "open", "Task to test", "--prefix", "TASK", "--new-prefix")
+    # Seed initial task without GIT_DIR
+    seed_items(repo, "single", [{"id": "TASK-1", "title": "Task to test"}])
 
     # Set GIT_DIR
     monkeypatch.setenv("GIT_DIR", str(dot_git))
