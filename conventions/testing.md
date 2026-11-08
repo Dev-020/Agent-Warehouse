@@ -35,14 +35,13 @@ Source: *Software Engineering at Google*, ch. 11 (Titus Winters, Tom Manshreck, 
 
 ## 2. Time budget per size
 
-Each test target has a maximum runtime set by its size:
+Bazel's defaults per test target, applied here per test:
 
 | Size | Default timeout per test |
 |---|---|
 | **Small** (`short`) | 60 s |
 | **Medium** (`moderate`) | 300 s |
 | **Large** (`long`) | 900 s |
-| **Enormous** (`eternal`) | 3600 s |
 
 - The default test run (small tests, plus medium tests if the project's test plan includes them) has a
   wall-clock budget set in the test plan ([[test-planning]] default: **10 minutes**).
@@ -56,9 +55,9 @@ Source: Bazel Test Encyclopedia (Google, https://bazel.build/reference/test-ency
 - Every test contains its own setup and teardown—temp directories, windows, threads, globals,
   environment variables, and clock—and writes only to its own private temp directory.
 - Every test must pass when run alone, in the full run, and in random order.
-- A test that passes alone but fails in the full run has a state-leak bug (described in secondary
-  summaries of Meszaros's *xUnit Test Patterns* as interacting tests sharing state); practitioner
-  reports advise detecting order dependence by running tests alone and in randomized order.
+- Passing alone while failing in the full run is a test bug to fix (described in secondary summaries
+  of Meszaros's *xUnit Test Patterns* as interacting tests sharing state); check by running alone and
+  in random order (practitioner reports advise regular random-order runs).
 
 Source: *Software Engineering at Google*, ch. 11 (Winters, Manshreck, Wright, https://abseil.io/resources/swe-book/html/ch11.html); Bazel Test Encyclopedia (https://bazel.build/reference/test-encyclopedia); Gerard Meszaros, *xUnit Test Patterns* (Addison-Wesley 2007, secondary summary via https://test-smell-catalog.readthedocs.io/).
 
@@ -108,8 +107,10 @@ Source: *Software Engineering at Google*, ch. 11 & 14 (Winters, Manshreck, Wrigh
 ## 8. Flaky tests
 
 - A flaky test is one that passes and fails on the same code without changes.
-- Fix a flaky test at once, or quarantine it with a [[backlog]] entry naming the test; never merge on
-  test failures that are not recorded in the backlog.
+- Fix a flaky test at once, or quarantine it with a [[backlog]] entry naming the test. Once the suite
+  gates merges ([[test-planning]] §1), never merge on test failures that are not recorded in the
+  backlog.
+- Green = the run the test plan names passes, apart from tests quarantined with a backlog entry.
 - A retry may confirm that a failure is flaky, but it is never the fix; near 1% flakiness a test suite
   begins to lose its value because engineers stop trusting failures.
 
@@ -119,20 +120,21 @@ Source: *Software Engineering at Google*, ch. 11 (Winters, Manshreck, Wright, ht
 
 - Coverage shows only which lines ran, not whether assertions verified the result; use it as a hint to
   find untested code, never as a numeric target or ceiling.
-- Mutation testing on changed lines is the stronger quality signal where a tool exists.
+- Google reports that mutation testing on changed lines is a stronger quality signal than line coverage
+  where a tool exists (Petrović et al. 2021).
 
 Source: *Software Engineering at Google*, ch. 11 (Winters, Manshreck, Wright, https://abseil.io/resources/swe-book/html/ch11.html); Goran Petrović et al., "Practical Mutation Testing at Scale: A view from Google" (IEEE TSE 2021, https://research.google/pubs/practical-mutation-testing-at-scale-a-view-from-google/).
 
 ## 10. Tests written by agents
 
-Coding agents add mocks significantly more often than human developers (Hora & Robbes 2026), and recent
-preprints and practitioner reports warn that agent-written tests carry higher flakiness risk from file
-I/O and non-deterministic logic (reported by Jhanglani et al. 2026) and often consist of print-statement
-probes rather than real assertions (reported by Chen et al. 2026 via Vaughan). Every agent-written test
-must follow these rules:
+Coding agents add mocks more often than human developers (36% vs 26% of test commits in Hora & Robbes
+2026), and recent preprints and practitioner reports warn that agent-written tests carry higher
+flakiness risk from file I/O and non-deterministic logic (reported by Jhanglani et al. 2026) and often
+consist of print-statement probes rather than real assertions (reported by Chen et al. 2026 via
+Vaughan). Every agent-written test must follow these rules:
 
 - (a) a test asserts something; a test that only prints is a probe;
-- (b) no new mock without a stated reason;
+- (b) no new mock without a stated reason (in a code comment or the report);
 - (c) file I/O only in temp dirs, seeds fixed, no real clock;
 - (d) an assertion is never weakened, skipped or deleted without saying so in the report;
 - (e) probes live outside the suite unless promoted on purpose.
@@ -141,11 +143,12 @@ Source: André Hora & Romain Robbes, "Are Coding Agents Generating Over-Mocked T
 
 ## 11. One main suite, one command
 
-- Tests live in one place and run with one recorded default command, plus named commands for marked
-  larger tests.
+- Keep one main suite per independently released component, each in one place and run with one
+  recorded default command (plus named commands for marked larger tests); the time budget applies per
+  command.
 - The commands are recorded in the project's test plan ([[test-planning]], [[test-plan]]).
 
-Source: *Software Engineering at Google*, ch. 11 & 14 (Winters, Manshreck, Wright, https://abseil.io/resources/swe-book); Bazel Test Encyclopedia (Google, https://bazel.build/reference/test-encyclopedia).
+Source: warehouse practice (no external source).
 
 ## 12. Sources
 
@@ -164,8 +167,6 @@ Secondary summaries, preprints, and practitioner reports (cited as advice or "re
 - Jhanglani, Desai, Kansara, AlOmar, "Beyond Test Presence: Assessing the Quality and Robustness of Agent-Generated Tests in Open-Source Projects", preprint 2026 — https://arxiv.org/abs/2607.12068
 - Chen et al., "Rethinking the Value of Agent-Generated Tests for LLM-Based Software Engineering Agents", arXiv:2602.07900, reported by Daniel Vaughan, 2 May 2026 — https://codex.danielvaughan.com/2026/05/02/do-agent-written-tests-actually-help-codex-cli-testing-strategy/
 - Practitioner flaky-test reports (2026) — https://testdino.com/blog/flaky-test-benchmark , https://dev.to/rollamadugu/flaky-tests-arent-random-a-field-guide-to-finding-and-killing-them-1bnp
-
-Source: *Software Engineering at Google*, ch. 11–14 (Winters, Manshreck, Wright, https://abseil.io/resources/swe-book); Bazel Test Encyclopedia (https://bazel.build/reference/test-encyclopedia); Ham Vocke (https://martinfowler.com/articles/practical-test-pyramid.html); Kent C. Dodds (https://kentcdodds.com/blog/the-testing-trophy-and-testing-classifications); John Micco (https://testing.googleblog.com/2016/05/flaky-tests-at-google-and-how-we.html); Hora & Robbes (https://arxiv.org/abs/2602.00409).
 
 ## Changelog
 
