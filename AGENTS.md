@@ -45,7 +45,7 @@ business. Do not add items or notes about it.
 
 ## Tests
 
-Follow the warehouse test plan in [[TESTING.md]] (`protocol/test-planning`). Every test written by an agent must follow [[testing]] §10:
+Follow the warehouse test plan in [[TESTING]] (`protocol/test-planning`). Every test written by an agent must follow [[testing]] §10:
 - (a) a test asserts something; a test that only prints is a probe;
 - (b) no new mock without a stated reason (in a code comment or the report);
 - (c) file I/O only in temp dirs, seeds fixed, no real clock;

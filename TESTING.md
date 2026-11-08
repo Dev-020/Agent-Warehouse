@@ -8,12 +8,12 @@
 ## Commands and measured duration
 
 One main suite per independently released component, each with one recorded default command; the time
-budget applies per command ([[testing]] §11).
+budget applies per command ([[testing]] §11). Measured on the maintainer's Windows laptop; single runs there vary by up to ~25%.
 
 | Run | Command | Sizes included | Measured duration | Date measured |
 |---|---|---|---|---|
-| **`_tools`** | `python -m pytest _tools/tests -q` | Medium (all medium, unmarked) | `[Orchestrator: measured after review]` | `[Orchestrator: measured after review]` |
-| **`backlog-cli`** | `python -m pytest tools/backlog-cli/tests -q` | Small and medium | `[Orchestrator: measured after review]` | `[Orchestrator: measured after review]` |
+| **`_tools`** | `python -m pytest _tools/tests -q` | Medium (all medium, unmarked) | 7m 23s (198 passed in 443.29 s) | 2026-11-08 |
+| **`backlog-cli`** | `python -m pytest tools/backlog-cli/tests -q` | Small and medium | 5m 41s (182 passed in 340.66 s) | 2026-11-08 |
 
 ## Project testing decisions
 
