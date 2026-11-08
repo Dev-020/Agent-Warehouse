@@ -60,9 +60,9 @@ command; the time budget applies per command, [[testing]] §11) and these nine d
   |---|---|
   | When the full suite runs, and who runs it | `tool/*` suites: automatically via `warehouse release` before tagging (by the maintainer/Orchestrator). `_tools` suite: by hand before a `_tools` change is merged (by the implementer or Orchestrator). |
 
-- **Shadow Cursor:** three commands (default run, full run, and marked GUI/window tests). The full run
-  (~4,750 tests) takes 7–12+ minutes (over budget) and has order-dependent failures tracked under
-  `#102`, `#107` and `#119` under Known exceptions in the [[backlog]].
+- **Shadow Cursor:** the full run (~4,750 tests, 7–12+ minutes, over budget) can't pass in one
+  command, so it is split into three; the order-dependent failures `#102`, `#107` and `#119` are
+  listed under Known exceptions with their [[backlog]] IDs.
 
   | Decision (differs from default) | Shadow Cursor choice |
   |---|---|
