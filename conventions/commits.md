@@ -1,6 +1,6 @@
 ---
 id: convention/commits
-version: 0.1.0
+version: 0.1.1
 status: draft
 summary: Git commit message and execution standard for agents and humans.
 applies-to: [codebase, vault, warehouse]
@@ -122,6 +122,8 @@ Following any change in a repository, agents must follow this structured lifecyc
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.1] - 2026-11-08
 #### Changed
 - Linked [[testing]] in §2 (Build integrity) and §4 Step 1 for what "tests green" means.
 
