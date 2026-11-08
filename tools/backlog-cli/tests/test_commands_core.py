@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from conftest import _init_repo_with_backlog, make_repo
+from conftest import _init_repo_with_backlog, make_claim, make_repo, seed_items
 
 
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
@@ -33,7 +33,7 @@ def test_cmd_open(tmp_path: Path, run_cli, layout: str):
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_cmd_claim(tmp_path: Path, run_cli, layout: str):
     repo = _init_repo_with_backlog(tmp_path / f"repo_{layout}", layout=layout)
-    run_cli(repo, "open", "Task to claim", "--prefix", "TASK", "--new-prefix")
+    seed_items(repo, layout, [{"id": "TASK-1", "title": "Task to claim"}])
     res = run_cli(repo, "claim", "TASK-1")
     assert res.exit_code == 0
 
@@ -63,20 +63,19 @@ def test_cmd_claim(tmp_path: Path, run_cli, layout: str):
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_cmd_adopt(tmp_path: Path, run_cli, layout: str):
     repo = _init_repo_with_backlog(tmp_path / f"repo_{layout}", layout=layout)
-    run_cli(repo, "open", "Task to adopt", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "claim", "TASK-1")
+    seed_items(repo, layout, [{"id": "TASK-1", "title": "Task to adopt"}])
+    wt_dir = make_claim(repo, "TASK-1", layout=layout)
 
     res = run_cli(repo, "adopt", "TASK-1")
     assert res.exit_code == 0
-    wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
     assert str(wt_dir).replace("\\", "/") in res.output.replace("\\", "/")
 
 
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_cmd_status(tmp_path: Path, run_cli, layout: str):
     repo = _init_repo_with_backlog(tmp_path / f"repo_{layout}", layout=layout)
-    run_cli(repo, "open", "Task to inspect", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "claim", "TASK-1")
+    seed_items(repo, layout, [{"id": "TASK-1", "title": "Task to inspect"}])
+    make_claim(repo, "TASK-1", layout=layout)
 
     res = run_cli(repo, "status")
     assert res.exit_code == 0
@@ -87,7 +86,7 @@ def test_cmd_status(tmp_path: Path, run_cli, layout: str):
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_cmd_close(tmp_path: Path, run_cli, layout: str):
     repo = _init_repo_with_backlog(tmp_path / f"repo_{layout}", layout=layout)
-    run_cli(repo, "open", "Task to complete", "--prefix", "TASK", "--new-prefix")
+    seed_items(repo, layout, [{"id": "TASK-1", "title": "Task to complete"}])
     run_cli(repo, "claim", "TASK-1")
 
     wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
@@ -130,7 +129,7 @@ def test_cmd_close(tmp_path: Path, run_cli, layout: str):
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_cmd_abandon(tmp_path: Path, run_cli, layout: str):
     repo = _init_repo_with_backlog(tmp_path / f"repo_{layout}", layout=layout)
-    run_cli(repo, "open", "Task to abandon", "--prefix", "TASK", "--new-prefix")
+    seed_items(repo, layout, [{"id": "TASK-1", "title": "Task to abandon"}])
     run_cli(repo, "claim", "TASK-1")
 
     wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
@@ -158,10 +157,9 @@ def test_cmd_abandon(tmp_path: Path, run_cli, layout: str):
 def test_open_inside_claim_worktree_writes_there(tmp_path: Path, run_cli):
     """Decision 16 / S9: open inside a claim worktree writes and commits there."""
     repo = _init_repo_with_backlog(tmp_path / "repo_s9")
-    run_cli(repo, "open", "Parent task", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "claim", "TASK-1")
+    seed_items(repo, "single", [{"id": "TASK-1", "title": "Parent task"}])
+    wt_dir = make_claim(repo, "TASK-1", layout="single")
 
-    wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
     assert wt_dir.is_dir()
 
     # Run open from within the claim worktree
@@ -222,9 +220,7 @@ def test_claim_missing_or_closed_id_creates_no_branch(tmp_path: Path, run_cli):
     assert not (tmp_path / "worktrees" / "NONEXISTENT-999").exists()
 
     # 2. Closed task ID
-    run_cli(repo, "open", "Task to complete", "--prefix", "TASK", "--new-prefix")
-    run_cli(repo, "claim", "TASK-1")
-    run_cli(repo, "close", "TASK-1", "--outcome", "Done")
+    seed_items(repo, "single", [{"id": "TASK-1", "title": "Task to complete", "status": "Closed", "resolved": "2026-10-01"}])
 
     res2 = run_cli(repo, "claim", "TASK-1")
     assert res2.exit_code != 0
@@ -299,7 +295,7 @@ def test_hook_failure_open_leaves_backlog_and_unrelated_untouched(tmp_path: Path
 def test_hook_failure_claim_leaves_no_branch_or_worktree_and_unrelated_untouched(tmp_path: Path, run_cli):
     """Hooks (Decision 25): claim commit failure removes worktree, deletes branch, leaves unrelated files."""
     repo = _init_repo_with_backlog(tmp_path / "repo_hook_claim")
-    run_cli(repo, "open", "Task to claim", "--prefix", "TASK", "--new-prefix")
+    seed_items(repo, "single", [{"id": "TASK-1", "title": "Task to claim"}])
     mod_file, staged_file = _setup_unrelated_files(repo)
 
     _install_failing_hook(repo)
@@ -322,7 +318,7 @@ def test_hook_failure_claim_leaves_no_branch_or_worktree_and_unrelated_untouched
 def test_hook_failure_close_restores_worktree_and_leaves_main_unmerged(tmp_path: Path, run_cli):
     """Hooks (Decision 25): close commit failure restores worktree backlog, leaves main unmerged."""
     repo = _init_repo_with_backlog(tmp_path / "repo_hook_close")
-    run_cli(repo, "open", "Task to close", "--prefix", "TASK", "--new-prefix")
+    seed_items(repo, "single", [{"id": "TASK-1", "title": "Task to close"}])
     run_cli(repo, "claim", "TASK-1")
 
     wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
@@ -359,7 +355,7 @@ def test_hook_failure_close_restores_worktree_and_leaves_main_unmerged(tmp_path:
 def test_abandon_refuses_own_commits_and_force_restores(tmp_path: Path, run_cli):
     """Decision 24 (D2, S10): abandon refuses branch with own commits; --force prints restore command and deletes."""
     repo = _init_repo_with_backlog(tmp_path / "repo_abandon_check")
-    run_cli(repo, "open", "Task to abandon", "--prefix", "TASK", "--new-prefix")
+    seed_items(repo, "single", [{"id": "TASK-1", "title": "Task to abandon"}])
     run_cli(repo, "claim", "TASK-1")
 
     wt_dir = (tmp_path / "worktrees" / "TASK-1").resolve()
@@ -395,9 +391,8 @@ def test_abandon_refuses_own_commits_and_force_restores(tmp_path: Path, run_cli)
 def test_close_from_inside_claim_worktree_refuses(tmp_path: Path, run_cli):
     """F1: close run from inside the claim worktree refuses cleanly naming primary tree."""
     repo = _init_repo_with_backlog(tmp_path / "repo_f1")
-    run_cli(repo, "open", "Task F1")
-    run_cli(repo, "claim", "#001")
-    wt_dir = (tmp_path / "worktrees" / "001").resolve()
+    seed_items(repo, "single", [{"id": "#001", "title": "Task F1"}])
+    wt_dir = make_claim(repo, "#001", layout="single")
     res = run_cli(wt_dir, "close", "#001", "--outcome", "Done")
     assert res.exit_code != 0
     assert "Cannot close from inside the claim worktree" in res.output
@@ -407,7 +402,7 @@ def test_close_from_inside_claim_worktree_refuses(tmp_path: Path, run_cli):
 def test_close_rerun_after_sync_conflict_skips_item_update(tmp_path: Path, run_cli):
     """F2: close rerun after resolving sync conflict succeeds and doesn't duplicate outcome."""
     repo = _init_repo_with_backlog(tmp_path / "repo_f2")
-    run_cli(repo, "open", "Task F2")
+    seed_items(repo, "single", [{"id": "#001", "title": "Task F2"}])
     run_cli(repo, "claim", "#001")
     wt_dir = (tmp_path / "worktrees" / "001").resolve()
 
@@ -436,10 +431,11 @@ def test_close_rerun_after_sync_conflict_skips_item_update(tmp_path: Path, run_c
 def test_claim_branches_from_base_branch(tmp_path: Path, run_cli):
     """F4: claim branches from base branch, not from current tree HEAD."""
     repo = _init_repo_with_backlog(tmp_path / "repo_f4")
-    run_cli(repo, "open", "Task 1")
-    run_cli(repo, "open", "Task 2")
-    run_cli(repo, "claim", "#001")
-    wt1 = (tmp_path / "worktrees" / "001").resolve()
+    seed_items(repo, "single", [
+        {"id": "#001", "title": "Task 1"},
+        {"id": "#002", "title": "Task 2"},
+    ])
+    wt1 = make_claim(repo, "#001", layout="single")
     (wt1 / "work.txt").write_text("wt1 work\n", encoding="utf-8")
     subprocess.run(["git", "add", "work.txt"], cwd=str(wt1), check=True)
     subprocess.run(["git", "commit", "-qm", "wt1 work"], cwd=str(wt1), check=True)
@@ -460,12 +456,15 @@ def test_claim_close_abandon_missing_base_refuses(tmp_path: Path, run_cli):
     subprocess.run(["git", "init", "-q", "-b", "trunk"], cwd=str(repo), check=True)
     subprocess.run(["git", "config", "user.name", "Tester"], cwd=str(repo), check=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=str(repo), check=True)
-    (repo / "BACKLOG.md").write_text("# Project Backlog\n\n- **Entry style:** full\n\n## 📋 In Progress\n\n## 📌 Backlog (Open Tasks)\n\n## ✅ Completed\n\n## 🧊 Icebox (Not Doing / Rejected)\n", encoding="utf-8")
+    (repo / "BACKLOG.md").write_text(
+        "# Project Backlog\n\n- **Entry style:** full\n\n## 📋 In Progress\n\n## 📌 Backlog (Open Tasks)\n\n"
+        "### [#001] Task on trunk\n- **Status**: `Open` | **Priority**: `P2`\n- **Created**: 2026-10-01\n\n"
+        "#### Outcome\n\n## ✅ Completed\n\n## 🧊 Icebox (Not Doing / Rejected)\n",
+        encoding="utf-8",
+    )
     (repo / "README.md").write_text("readme\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
     subprocess.run(["git", "commit", "-qm", "init"], cwd=str(repo), check=True)
-
-    run_cli(repo, "open", "Task on trunk")
 
     # 1. claim refuses when base branch ('main') not found
     res_claim = run_cli(repo, "claim", "#001")
@@ -494,8 +493,8 @@ def test_claim_close_abandon_missing_base_refuses(tmp_path: Path, run_cli):
 def test_close_refuses_when_primary_not_on_base(tmp_path: Path, run_cli):
     """F9: close refuses before any write unless the primary tree is on the base branch."""
     repo = _init_repo_with_backlog(tmp_path / "repo_f9")
-    run_cli(repo, "open", "Task F9")
-    run_cli(repo, "claim", "#001")
+    seed_items(repo, "single", [{"id": "#001", "title": "Task F9"}])
+    wt_dir = make_claim(repo, "#001", layout="single")
     subprocess.run(["git", "checkout", "-q", "-b", "side"], cwd=str(repo), check=True)
     res = run_cli(repo, "close", "#001", "--outcome", "Done")
     assert res.exit_code != 0
@@ -505,7 +504,7 @@ def test_close_refuses_when_primary_not_on_base(tmp_path: Path, run_cli):
 def test_claim_hint_quotes_task_id(tmp_path: Path, run_cli):
     """F15: claim hint quotes the task ID so shell '#' does not start a comment."""
     repo = _init_repo_with_backlog(tmp_path / "repo_f15")
-    run_cli(repo, "open", "Task F15")
+    seed_items(repo, "single", [{"id": "#001", "title": "Task F15"}])
     res = run_cli(repo, "claim", "#001")
     assert res.exit_code == 0
     assert "python task.py close '#001' --outcome 'Summary'" in res.output
@@ -563,7 +562,7 @@ def test_folder_item_restore_on_hook_failure(tmp_path: Path, run_cli):
     subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
     subprocess.run(["git", "commit", "-qm", "init"], cwd=str(repo), check=True)
 
-    run_cli(repo, "open", "Alpha task")
+    seed_items(repo, "folders", [{"id": "#001", "title": "Alpha task"}])
     o = repo / "BACKLOG" / "open"
     f = next(o.glob("001-*.md"))
     folder = o / f.stem
@@ -607,9 +606,11 @@ def test_parallel_claims_close_cleanly(tmp_path: Path, run_cli, layout: str, uni
             subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True)
             subprocess.run(["git", "commit", "-qm", "remove attrs"], cwd=str(repo), check=True)
 
-    for title in ("One", "Two", "Three"):
-        res = run_cli(repo, "open", title)
-        assert res.exit_code == 0
+    seed_items(repo, layout, [
+        {"id": "#001", "title": "One"},
+        {"id": "#002", "title": "Two"},
+        {"id": "#003", "title": "Three"},
+    ])
 
     for tid in ("#001", "#002"):
         res = run_cli(repo, "claim", tid)
@@ -640,8 +641,10 @@ def test_parallel_claims_close_cleanly(tmp_path: Path, run_cli, layout: str, uni
 def test_auto_resolved_merge_preserves_item_opened_in_worktree(tmp_path: Path, run_cli, layout: str):
     """Decision 35: Items opened inside a claim worktree survive auto-resolved sync merge."""
     repo = _init_repo_with_backlog(tmp_path / f"repo_sub_{layout}", layout=layout)
-    for title in ("First task", "Second task"):
-        run_cli(repo, "open", title)
+    seed_items(repo, layout, [
+        {"id": "#001", "title": "First task"},
+        {"id": "#002", "title": "Second task"},
+    ])
 
     run_cli(repo, "claim", "#001")
     run_cli(repo, "claim", "#002")
@@ -681,8 +684,10 @@ def test_auto_resolved_merge_preserves_item_opened_in_worktree(tmp_path: Path, r
 def test_branch_changed_other_entry_leaves_conflicts_for_user(tmp_path: Path, run_cli):
     """Decision 35: If the claim branch changed another entry, do not auto-resolve; leave conflicts for user."""
     repo = _init_repo_with_backlog(tmp_path / "repo_changed_other", layout="single")
-    run_cli(repo, "open", "Alpha task")
-    run_cli(repo, "open", "Beta task")
+    seed_items(repo, "single", [
+        {"id": "#001", "title": "Alpha task"},
+        {"id": "#002", "title": "Beta task"},
+    ])
 
     run_cli(repo, "claim", "#001")
     run_cli(repo, "claim", "#002")
