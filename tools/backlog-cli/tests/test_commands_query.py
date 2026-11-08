@@ -128,6 +128,7 @@ def test_pure_select_next_item():
 # ===========================================================================
 
 
+@pytest.mark.medium
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_list_filters_and_default_statuses(tmp_path: Path, run_cli, layout: str):
     """Decision 31: list filters by status and priority, with default Open and In Progress."""
@@ -215,6 +216,7 @@ def test_list_filters_and_default_statuses(tmp_path: Path, run_cli, layout: str)
     assert ids_combo == ["TASK-1"]
 
 
+@pytest.mark.medium
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_list_claim_overlay(tmp_path: Path, run_cli, layout: str):
     """Decision 31: item with claim/<ID> branch shows In Progress (claim/<ID>)."""
@@ -244,6 +246,7 @@ def test_list_claim_overlay(tmp_path: Path, run_cli, layout: str):
     assert by_id["TASK-2"][2] == "In Progress (claim/TASK-2)"
 
 
+@pytest.mark.medium
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_list_sort_order(tmp_path: Path, run_cli, layout: str):
     """Decision 31: sort order is priority, then Created, then position/name."""
@@ -277,6 +280,7 @@ def test_list_sort_order(tmp_path: Path, run_cli, layout: str):
     assert ids == ["TASK-C", "TASK-D", "TASK-B", "TASK-A"]
 
 
+@pytest.mark.medium
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_list_no_items(tmp_path: Path, run_cli, layout: str):
     """Decision 31: empty list prints No items. and exits 0."""
@@ -297,6 +301,7 @@ def test_list_no_items(tmp_path: Path, run_cli, layout: str):
     assert res_none.output.strip() == "No items."
 
 
+@pytest.mark.medium
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_next_with_priorities_ties_dependencies(tmp_path: Path, run_cli, layout: str):
     """Decision 32: next selects highest priority ready item, ties on Created, checks dependencies."""
@@ -368,6 +373,7 @@ def test_next_with_priorities_ties_dependencies(tmp_path: Path, run_cli, layout:
     assert "1 open item is blocked." in res_dep_rej.output
 
 
+@pytest.mark.medium
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_next_no_ready_item_blocked_count(tmp_path: Path, run_cli, layout: str):
     """Decision 32: when nothing is ready, print No ready item. and count of blocked open items."""
@@ -399,6 +405,7 @@ def test_next_no_ready_item_blocked_count(tmp_path: Path, run_cli, layout: str):
     assert "2 open items are blocked." in res_blk.output
 
 
+@pytest.mark.medium
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_next_blocked_count_excludes_claimed(tmp_path: Path, run_cli, layout: str):
     """Decision 42 (N1): next blocked count excludes claimed items."""
@@ -425,6 +432,7 @@ def test_next_blocked_count_excludes_claimed(tmp_path: Path, run_cli, layout: st
     assert "1 open item is blocked." in res.output
 
 
+@pytest.mark.medium
 def test_list_rejects_unknown_status_and_priority(tmp_path: Path, run_cli):
     """Decision 42 (N4): list rejects unknown status and priority values."""
     repo = _init_repo_with_backlog(tmp_path / "repo_rej_args", layout="single")

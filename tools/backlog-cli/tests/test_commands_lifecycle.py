@@ -9,6 +9,8 @@ import pytest
 from conftest import _init_repo_with_backlog, make_claim, make_claim_branch, make_repo, seed_items
 from test_commands_core import _assert_unrelated_files_unchanged, _install_failing_hook, _setup_unrelated_files
 
+pytestmark = pytest.mark.medium
+
 
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_reject_and_cancel_move_to_icebox(tmp_path: Path, run_cli, layout: str):

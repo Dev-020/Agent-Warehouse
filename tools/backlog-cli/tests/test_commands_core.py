@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 from conftest import _init_repo_with_backlog, make_claim, make_repo, seed_items
 
+pytestmark = pytest.mark.medium
+
 
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_cmd_open(tmp_path: Path, run_cli, layout: str):

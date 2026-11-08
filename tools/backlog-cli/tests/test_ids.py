@@ -9,6 +9,8 @@ import pytest
 from conftest import make_repo
 from test_commands_core import _init_repo_with_backlog
 
+pytestmark = pytest.mark.medium
+
 
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_id_used_only_on_claim_branch_not_handed_out_again(tmp_path: Path, run_cli, layout: str):

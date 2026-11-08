@@ -9,6 +9,8 @@ import pytest
 from backlog_cli import TaskError
 from backlog_cli.settings import load_settings, read_manifest_settings
 
+pytestmark = pytest.mark.medium
+
 
 # ---------------------------------------------------------------------------
 # Manifest Parser

@@ -182,6 +182,7 @@ Done
 # ===========================================================================
 
 
+@pytest.mark.medium
 def test_close_blocked_by_new_duplicate_single(tmp_path: Path, run_cli):
     """A new duplicate blocks close on single-file layout, naming every copy."""
     repo = _init_repo_with_backlog(tmp_path / "repo_single", layout="single")
@@ -212,6 +213,7 @@ def test_close_blocked_by_new_duplicate_single(tmp_path: Path, run_cli):
     assert wt_dir.is_dir()
 
 
+@pytest.mark.medium
 def test_close_blocked_by_new_duplicate_split(tmp_path: Path, run_cli):
     """A new duplicate blocks close on split layout, naming every copy."""
     repo = _init_repo_with_backlog(tmp_path / "repo_split", layout="split")
@@ -238,6 +240,7 @@ def test_close_blocked_by_new_duplicate_split(tmp_path: Path, run_cli):
     assert wt_dir.is_dir()
 
 
+@pytest.mark.medium
 def test_close_blocked_by_new_duplicate_folders(tmp_path: Path, run_cli):
     """A new duplicate blocks close on folders layout, naming every copy."""
     repo = _init_repo_with_backlog(tmp_path / "repo_folders", layout="folders")
@@ -262,6 +265,7 @@ def test_close_blocked_by_new_duplicate_folders(tmp_path: Path, run_cli):
     assert wt_dir.is_dir()
 
 
+@pytest.mark.medium
 def test_close_allows_old_duplicate_on_base(tmp_path: Path, run_cli):
     """An old duplicate on the base branch doesn't block close."""
     repo = _init_repo_with_backlog(tmp_path / "repo_old_dup", layout="single")
@@ -294,6 +298,7 @@ def test_close_allows_old_duplicate_on_base(tmp_path: Path, run_cli):
     assert not wt_dir.exists()
 
 
+@pytest.mark.medium
 def test_close_merges_after_fixing_duplicate_in_worktree(tmp_path: Path, run_cli):
     """After fixing the duplicate in the worktree and committing, re-running close merges."""
     repo = _init_repo_with_backlog(tmp_path / "repo_fix_dup", layout="single")
@@ -335,6 +340,7 @@ def test_close_merges_after_fixing_duplicate_in_worktree(tmp_path: Path, run_cli
     assert not wt_dir.exists()
 
 
+@pytest.mark.medium
 def test_close_warns_on_unticked_criteria_and_merges(tmp_path: Path, run_cli):
     """Unticked criteria warn and don't block close."""
     repo = _init_repo_with_backlog(tmp_path / "repo_unticked", layout="single")
@@ -365,6 +371,7 @@ def test_close_warns_on_unticked_criteria_and_merges(tmp_path: Path, run_cli):
     assert not wt_dir.exists()
 
 
+@pytest.mark.medium
 def test_close_compact_entry_no_warning(tmp_path: Path, run_cli):
     """Compact entries get no warning when closed."""
     repo = _init_repo_with_backlog(tmp_path / "repo_compact", layout="single")
@@ -392,6 +399,7 @@ def test_close_compact_entry_no_warning(tmp_path: Path, run_cli):
     assert not wt_dir.exists()
 
 
+@pytest.mark.medium
 def test_close_duplicate_check_subfolder_single(tmp_path: Path, run_cli):
     """B1 regression: check detects duplicate when backlog is in a subfolder (single layout)."""
     repo = _init_repo_with_backlog(tmp_path / "repo_sub_single", layout="single")
@@ -426,6 +434,7 @@ def test_close_duplicate_check_subfolder_single(tmp_path: Path, run_cli):
     assert wt_dir.is_dir()
 
 
+@pytest.mark.medium
 def test_close_duplicate_check_subfolder_split(tmp_path: Path, run_cli):
     """B1 regression: check detects duplicate when backlog is in a subfolder (split layout)."""
     repo = _init_repo_with_backlog(tmp_path / "repo_sub_split", layout="split")
@@ -458,6 +467,7 @@ def test_close_duplicate_check_subfolder_split(tmp_path: Path, run_cli):
     assert wt_dir.is_dir()
 
 
+@pytest.mark.medium
 def test_close_duplicate_check_subfolder_folders(tmp_path: Path, run_cli):
     """B1 regression: check detects duplicate when backlog is in a subfolder (folders layout)."""
     repo = _init_repo_with_backlog(tmp_path / "repo_sub_folders", layout="folders")
@@ -490,6 +500,7 @@ def test_close_duplicate_check_subfolder_folders(tmp_path: Path, run_cli):
     assert wt_dir.is_dir()
 
 
+@pytest.mark.medium
 def test_close_rerun_syncs_moved_base(tmp_path: Path, run_cli):
     """B2 regression: re-run of close syncs moved base and detects duplicate."""
     repo = _init_repo_with_backlog(tmp_path / "repo_rerun_sync", layout="folders")
@@ -538,6 +549,7 @@ def test_close_rerun_syncs_moved_base(tmp_path: Path, run_cli):
     assert wt_dir.is_dir()
 
 
+@pytest.mark.medium
 def test_close_indented_heading_in_note_not_false_positive(tmp_path: Path, run_cli):
     """S1 regression: indented heading in note or code block does not trigger false positive."""
     repo = _init_repo_with_backlog(tmp_path / "repo_indented_note", layout="single")

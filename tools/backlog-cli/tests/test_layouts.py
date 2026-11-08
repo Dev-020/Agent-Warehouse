@@ -279,6 +279,7 @@ def make_folders_fixture(tmp_path: Path) -> ItemFoldersLayout:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.medium
 @pytest.mark.parametrize("layout_type", ["single", "split", "folders"])
 def test_layout_parse_and_find(tmp_path: Path, layout_type: str):
     sub = tmp_path / layout_type
@@ -308,6 +309,7 @@ def test_layout_parse_and_find(tmp_path: Path, layout_type: str):
     assert it1_no_hash.id == "#010"
 
 
+@pytest.mark.medium
 @pytest.mark.parametrize("layout_type", ["single", "split", "folders"])
 def test_layout_add_priority_placement(tmp_path: Path, layout_type: str):
     sub = tmp_path / layout_type
@@ -342,6 +344,7 @@ def test_layout_add_priority_placement(tmp_path: Path, layout_type: str):
         assert idx_p1 < idx_p2 < idx_p3
 
 
+@pytest.mark.medium
 @pytest.mark.parametrize("layout_type", ["single", "split", "folders"])
 def test_layout_claim_and_close_moves(tmp_path: Path, layout_type: str):
     sub = tmp_path / layout_type
@@ -384,6 +387,7 @@ def test_layout_claim_and_close_moves(tmp_path: Path, layout_type: str):
         assert "Finished all criteria with evidence." in content
 
 
+@pytest.mark.medium
 @pytest.mark.parametrize("layout_type", ["single", "split", "folders"])
 def test_layout_append_note(tmp_path: Path, layout_type: str):
     sub = tmp_path / layout_type
@@ -406,6 +410,7 @@ def test_layout_append_note(tmp_path: Path, layout_type: str):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.medium
 @pytest.mark.parametrize("crlf", [False, True])
 def test_single_byte_preservation(tmp_path: Path, crlf: bool):
     sub = tmp_path / f"single_{crlf}"
@@ -468,6 +473,7 @@ def test_id_allocation():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.medium
 def test_compact_entry_style(tmp_path: Path):
     layout = make_single_fixture(tmp_path / "compact")
     item = Item(
@@ -590,6 +596,7 @@ Something.
 """
 
 
+@pytest.mark.medium
 def test_b1_resolved_metadata_block_single(tmp_path: Path):
     """B1: close puts Resolved in metadata block under heading, not inside Why."""
     p = tmp_path / "BACKLOG.md"
@@ -605,6 +612,7 @@ def test_b1_resolved_metadata_block_single(tmp_path: Path):
     assert "#### Why\n- **Note** prose.\n\n#### Wanted" in text
 
 
+@pytest.mark.medium
 def test_b1_resolved_metadata_block_split(tmp_path: Path):
     """B1 (split): close puts Resolved in metadata block under heading in Closed.md."""
     bdir = tmp_path / "BACKLOG"
@@ -621,6 +629,7 @@ def test_b1_resolved_metadata_block_split(tmp_path: Path):
     assert "#### Why\n- **Note** prose.\n\n#### Wanted" in closed_text
 
 
+@pytest.mark.medium
 def test_b2_append_note_spacing_single(tmp_path: Path):
     """B2 (single): append_note puts new note right after last note with single blank line before heading."""
     p = tmp_path / "BACKLOG.md"
@@ -635,6 +644,7 @@ def test_b2_append_note_spacing_single(tmp_path: Path):
     assert ": second\n\n#### Outcome" in text
 
 
+@pytest.mark.medium
 def test_b2_append_note_spacing_split(tmp_path: Path):
     """B2 (split): append_note puts new note right after last note with single blank line before heading."""
     bdir = tmp_path / "BACKLOG"
@@ -651,6 +661,7 @@ def test_b2_append_note_spacing_split(tmp_path: Path):
     assert ": second\n\n#### Outcome" in open_text
 
 
+@pytest.mark.medium
 def test_b2_append_note_spacing_folders(tmp_path: Path):
     """B2 (folders): append_note puts new note right after last note with single blank line before heading."""
     bdir = tmp_path / "BACKLOG"
@@ -669,6 +680,7 @@ def test_b2_append_note_spacing_folders(tmp_path: Path):
     assert ": second\n\n## Outcome" in item_text
 
 
+@pytest.mark.medium
 def test_b3_close_single_blank_line_spacing(tmp_path: Path):
     """B3 (single): closing a full entry leaves exactly one blank line after Outcome, not two."""
     p = tmp_path / "BACKLOG.md"
@@ -683,6 +695,7 @@ def test_b3_close_single_blank_line_spacing(tmp_path: Path):
     assert "#### Outcome\nDone.\n\n\n## 🧊 Icebox" not in text
 
 
+@pytest.mark.medium
 def test_f7_final_newline_preserved(tmp_path: Path):
     """F7: Keep file's exact tail: no final newline, one, or blank lines after it."""
     for tail in ("", "\n", "\n\n"):
@@ -696,6 +709,7 @@ def test_f7_final_newline_preserved(tmp_path: Path):
         assert after.endswith(("Note at end" + tail).encode("utf-8"))
 
 
+@pytest.mark.medium
 def test_f8_unicode_line_breaks_untouched(tmp_path: Path):
     """F8: Untouched entries with U+2028, U+0085 or form feed are not rewritten with standard newlines."""
     entry = "### [#001] Pasted\n- **Status**: `Open` | **Priority**: `P1`\n- **Created**: 2026-10-01\n\nline one\u2028still line one\x0cpage\n"
@@ -713,6 +727,7 @@ def test_f8_unicode_line_breaks_untouched(tmp_path: Path):
     assert entry.rstrip("\n") in after
 
 
+@pytest.mark.medium
 def test_f11_rejected_before_unrecognized_heading(tmp_path: Path):
     """F11: Every section ends at the next ## heading, so a rejected entry stays before ## 🔎 Findings Register."""
     text = (
@@ -728,6 +743,7 @@ def test_f11_rejected_before_unrecognized_heading(tmp_path: Path):
     assert after.index("### [#001]") < after.index("## 🔎 Findings Register")
 
 
+@pytest.mark.medium
 def test_f6_frontmatter_yaml_quoting(tmp_path: Path):
     """F6: Folder frontmatter writes valid YAML for titles with colons, hashes, brackets, and quotes."""
     bdir = tmp_path / "BACKLOG"
@@ -752,6 +768,7 @@ def test_f10_labels_format():
     assert parsed.fields.get("labels") == ["Bug", "UI"]
 
 
+@pytest.mark.medium
 def test_decision_28_metadata_fields_single(tmp_path: Path):
     """Decision 28: Item.fields gets labels, created, severity, likelihood, depends_on, parent, resolved on single layout."""
     text = (
@@ -779,6 +796,7 @@ def test_decision_28_metadata_fields_single(tmp_path: Path):
     assert it.fields["resolved"] == "2026-10-12"
 
 
+@pytest.mark.medium
 def test_decision_28_metadata_fields_split(tmp_path: Path):
     """Decision 28: Metadata fields on split layout."""
     bdir = tmp_path / "BACKLOG"
@@ -806,6 +824,7 @@ def test_decision_28_metadata_fields_split(tmp_path: Path):
     assert it.fields["parent"] == "WH-0"
 
 
+@pytest.mark.medium
 def test_decision_28_metadata_fields_folders(tmp_path: Path):
     """Decision 28: Metadata fields on item folders layout."""
     bdir = tmp_path / "BACKLOG"
@@ -841,6 +860,7 @@ def test_decision_28_metadata_fields_folders(tmp_path: Path):
     assert it.fields["resolved"] == "2026-10-12"
 
 
+@pytest.mark.medium
 def test_set_priority_single(tmp_path: Path):
     """set_priority updates priority and moves Open task by priority, leaves In Progress in place (Single)."""
     text = (
@@ -884,6 +904,7 @@ def test_set_priority_single(tmp_path: Path):
     assert idx_prog < idx_001 < idx_open
 
 
+@pytest.mark.medium
 def test_set_priority_split(tmp_path: Path):
     """set_priority on split layout."""
     bdir = tmp_path / "BACKLOG"
@@ -921,6 +942,7 @@ def test_set_priority_split(tmp_path: Path):
     assert idx_prog < idx_001 < idx_open
 
 
+@pytest.mark.medium
 def test_set_priority_folders(tmp_path: Path):
     """set_priority on item folders layout."""
     bdir = tmp_path / "BACKLOG"

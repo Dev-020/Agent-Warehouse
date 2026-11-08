@@ -24,6 +24,10 @@ from backlog_cli.layouts import get_layout
 from backlog_cli.settings import load_settings
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "medium: tests that use disk or git (conventions/testing.md)")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def hermetic_git_env(tmp_path_factory):
     """Isolate tests from user/system git config (Q2, [[testing]] §3)."""

@@ -9,6 +9,8 @@ import pytest
 from conftest import _init_repo_with_backlog, make_claim
 from backlog_cli.settings import load_settings
 
+pytestmark = pytest.mark.medium
+
 
 @pytest.mark.parametrize("layout", ["single", "split", "folders"])
 def test_make_claim_contract_with_real_claim(tmp_path: Path, run_cli, layout: str):

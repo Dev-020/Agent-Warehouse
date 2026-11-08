@@ -10,6 +10,8 @@ import pytest
 from backlog_cli.gitops import GIT_DIR_MSG, NO_GIT_MSG
 from conftest import _init_repo_with_backlog, seed_items
 
+pytestmark = pytest.mark.medium
+
 
 def test_separate_git_dir_pointer_file_cycle(tmp_path: Path, run_cli):
     """In a repository made with git init --separate-git-dir, open/claim/close then open/claim/abandon works."""
