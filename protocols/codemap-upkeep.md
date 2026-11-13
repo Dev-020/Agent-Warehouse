@@ -100,6 +100,8 @@ uses `codemap_refresh: phase-end`.
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.0] - 2026-11-13
 #### Added
 - First draft: staleness check, three refresh triggers, three ways to refresh, when to do a full
   re-audit, six steps and a worked example.
