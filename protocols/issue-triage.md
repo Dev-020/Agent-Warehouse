@@ -1,6 +1,6 @@
 ---
 id: protocol/issue-triage
-version: 0.1.0
+version: 0.1.1
 status: draft
 summary: Label every finding by severity, likelihood and whether it blocks; fix now only what blocks or is critical, or major and likely; record everything else in the backlog so it stays known.
 applies-to: [codebase, vault]
@@ -102,6 +102,7 @@ Report findings to the user in one table:
 
 ### [Unreleased]
 
+### [0.1.1] - 2026-11-13
 #### Removed
 - The link to the case study behind the example; the case study is no longer published.
 
