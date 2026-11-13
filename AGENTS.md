@@ -11,8 +11,14 @@ manifest, and propagates releases to those projects.
 It is responsible for: the warehouse structure, what goes into it, how items are managed and
 versioned, how projects choose and pull items, and how updates reach projects.
 
-**Out of scope:** how AI agents inside a project gather or load context. That is each project's own
-business. Do not add items or notes about it.
+**Out of scope:** deciding or wiring how a project's agents load context (hooks, `@imports`,
+session-start behaviour, how its `CLAUDE.md`/`AGENTS.md` are connected). Each project owns that, and
+the warehouse never imposes it. The warehouse's only agent-facing duty there is the notice that the
+project uses warehouse items and that they may be updated.
+
+**In scope, like any other item:** optional practices a project may choose for organizing or finding
+its context, such as a codemap, an active-context folder or working-memory notes. A project uses one
+only if it pulls it.
 
 ## Read first
 
