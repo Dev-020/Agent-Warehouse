@@ -411,4 +411,4 @@ Work is delegated to Codebuff-style roles ([[codebuff-orchestration]]).
 - **Per-item auto-sync:** deferred until real cases appear.
 - ~~Default `target` folder~~ **Decided 2026-09-14:** `warehouse/`, visible, because there's no reason to
   hide it.
-- **Remote:** https://github.com/Dev-020/AI-Agent-Warehouse (private).
+- **Remote:** https://github.com/Dev-020/Agent-Warehouse.
