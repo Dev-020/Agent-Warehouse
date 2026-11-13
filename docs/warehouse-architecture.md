@@ -28,8 +28,14 @@ changes here reach every project that uses them.
 4. How projects choose and pull items.
 5. How updates propagate to projects.
 
-**Out of scope:** how AI agents in a project gather or load context. Each project decides that. The only
+**Out of scope:** deciding or wiring how a project's agents load context (hooks, `@imports`,
+session-start behaviour, how its instruction files are connected). Each project decides that. The only
 agent-facing duty is a notice saying the project uses warehouse items and that they may be updated.
+
+**In scope:** optional items that offer a practice for organizing or finding context, such as a
+codemap, an active-context folder or working-memory notes. Like every item, a project uses one only if
+it pulls it. (Clarified 2026-11-12: the original wording read as banning such items. It was meant to
+stop the warehouse from dictating context loading.)
 
 **Decisions (2026-09-13/14):**
 - **Codebuff** is the architectural foundation, adapted to our environment.
