@@ -285,6 +285,8 @@ A minimal design system, started from scratch, for a dark desktop app with no to
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.0] - 2026-11-13
 #### Added
 - First draft: one source of truth agreed before UI design, three ways to start, document structure
   with a day-one minimum, token tiers and naming, the optional DTCG 2025.10 token file, principles
