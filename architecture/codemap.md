@@ -252,6 +252,8 @@ No module units in the record.
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.0] - 2026-11-13
 #### Added
 - First draft: five levels from the core's unit kinds, roll-up rules, marks from the structure lens,
   build steps, single-file format with a split rule, and a worked example from the `notes-cli` record.
