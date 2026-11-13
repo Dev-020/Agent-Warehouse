@@ -74,7 +74,7 @@ Shared project-type detection (`discovery.detect_project_types`) inspects the pr
 # Preview proposed starter manifest
 python <warehouse>/_tools/warehouse.py bootstrap
 
-# Write standard loadout manifest to GRIP
+# Write the standard loadout manifest to a project
 python <warehouse>/_tools/warehouse.py bootstrap --profile standard --write --project C:/projects/my-vault
 ```
 

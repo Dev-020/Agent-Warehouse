@@ -90,9 +90,9 @@ def test_registry_generated(wh):
 
 
 def test_real_config_file_is_valid():
+    # The tracked config holds no machine paths; roots live in the gitignored local file.
+    assert config_mod._read(TOOLS_DIR.parent / "warehouse.config.yml")["project_roots"] == []
     cfg = config_mod.load(TOOLS_DIR.parent)
-    roots = [r.as_posix().lower() for r in cfg.project_roots]
-    assert roots == ["c:/projects/vaults", "c:/projects/code"]
     for d in (".git", "node_modules", ".claude", "worktrees", ".obsidian"):
         assert d in cfg.skip_dirs
     assert "warehouse.config.local.yml" in (TOOLS_DIR.parent / ".gitignore").read_text()

@@ -1,9 +1,7 @@
 # Warehouse tool configuration (see _tools/DESIGN.md §2.1).
 # Per-machine overrides of project_roots / max_depth go in warehouse.config.local.yml (gitignored).
 config_version: 1
-project_roots:
-  - C:/projects/vaults
-  - C:/projects/code
+project_roots: []             # set your own in warehouse.config.local.yml, e.g. [C:/projects/vaults, C:/projects/code]
 max_depth: 4                  # directory levels below a root searched for .warehouse.yml
 skip_dirs:                    # directory NAMES never descended into (case-insensitive)
   - .git
