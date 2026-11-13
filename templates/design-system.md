@@ -128,5 +128,7 @@ Changes to the source of truth are approved by the owner. Retired tokens and com
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.0] - 2026-11-13
 #### Added
 - First draft.
