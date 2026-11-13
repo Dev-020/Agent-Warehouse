@@ -20,3 +20,15 @@ warehouse.config.local.yml
 
 # CLI engine sandboxes
 .*-engine/
+
+# Internal to the local copy, kept out of the public repo (WH-21)
+/BACKLOG.md
+/_registry/*
+!/_registry/.gitkeep
+/_inbox/*
+!/_inbox/README.md
+/_archive/
+/case-studies/
+/reference/
+/docs/plans/
+/.obsidian/
