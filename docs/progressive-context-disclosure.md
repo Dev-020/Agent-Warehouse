@@ -15,7 +15,6 @@ Related documents:
 - Architectural foundation: [[warehouse-architecture]]
 - Multi-agent orchestration and cost scaling: [[codebuff-orchestration]]
 - Research discipline and evidence hierarchy: [[research-discipline]]
-- Workspace prior art and inventory: [[workspace-audit]]
 
 ---
 

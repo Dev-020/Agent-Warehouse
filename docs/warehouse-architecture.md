@@ -9,14 +9,11 @@ tags: [plan, architecture, propagation, versioning]
 
 # Warehouse Architecture
 
-> **Background:** [[workspace-audit]] (what exists across projects and where it drifted) ·
-> [[backlog-comparison]] · [[agentic-landscape]]
-
 ## Context
 
 **Problem.** The same agentic workflows, protocols, conventions, skills and tools are hand-copied into
 many projects, and the copies drift. `Obsidian_As_Working_Memory.md`, for example, now exists in 3
-versions across 9 projects ([[workspace-audit]] §4).
+versions across 9 projects.
 
 **Goal.** Keep one master copy of each item in this warehouse. Projects choose the items they use, and
 changes here reach every project that uses them.
@@ -88,7 +85,7 @@ AI/                               git repo · Obsidian vault
 
 ## 2. What goes in (first batch)
 
-These come from [[workspace-audit]] §5. Where drifted versions exist, they are reconciled into one
+These come from an audit of the existing projects. Where drifted versions exist, they are reconciled into one
 canonical version, which starts at `1.0.0`.
 
 | Item | Kind | Sources to reconcile |
@@ -100,7 +97,7 @@ canonical version, which starts at `1.0.0`.
 | research-discipline | protocol | FACTORIO `Research Discipline.md` |
 | safe-write | protocol | GRIP protocol §3 |
 | worktree-claims | protocol | FACTORIO `Worktree Protocol.md` |
-| backlog | convention | [[backlog-comparison]] recommendations |
+| backlog | convention | a comparison of backlog formats |
 | frontmatter | convention | COLLEGE `Frontmatter_Schema.md` |
 | commits | convention | `post-change-commit.md` variants |
 | plan-document | template | discord-bot `docs/*-PLAN.md` structure |
@@ -347,7 +344,7 @@ Python standard library plus PyYAML; pytest test suite.
 
 ## 7. Build phases
 
-Work is delegated to Codebuff-style roles ([[codebuff-trial-log]]).
+Work is delegated to Codebuff-style roles ([[codebuff-orchestration]]).
 
 ### Phase 1: Foundation
 - `git init`, `.gitignore` (`.obsidian/workspace.json`, `desktop.ini`), and the private GitHub remote.

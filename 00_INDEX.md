@@ -97,7 +97,7 @@ Items intentionally postponed until enough real use cases exist. Revisit when se
 - 2026-11-08 — template/review-request 0.2.0
 <!-- warehouse:releases:end -->
 
-## Documentation & Reference (not synced)
+## Documentation (not synced)
 
 **Warehouse documentation** (`docs/`):
 - [[taxonomy]] — terminology standard: rules, protocols, conventions, and workflows
@@ -105,31 +105,3 @@ Items intentionally postponed until enough real use cases exist. Revisit when se
 - [[cli-reference]] — complete CLI manual and command reference
 - [[warehouse-architecture]] — system design, phase rollout, and synchronization invariants
 - [[progressive-context-disclosure]] — context tiering and token economics
-
-**Case studies** (`case-studies/`):
-- [[shadow-cursor-038-phased-build]] — How Shadow Cursor #038 moved from one failed long implementer session to a phased build with fresh subagents, probe-backed reviews, and one full test run per phase.
-- [[shadow-cursor-063-staffing]] — How Shadow Cursor #063 derived phase staffing from size, coupling, and model selection rather than repeating #038's default, and how raw-file citations caught flawed probe reports.
-- [[shadow-cursor-063-triage]] — How four extra fix rounds for unlikely preview corner cases delayed Shadow Cursor #063, and the triage rule (severity, likelihood, blocks) set afterwards.
-
-**Research and audits** (`reference/`):
-- [[workspace-audit]] — what exists across projects and where it drifted
-- [[computer-use-research]] — staged Hermes computer-use vs building on cua-driver, with prior-art comparison
-- [[backlog-comparison]]
-- [[backlog-industry-research]] — how established teams track and triage work; Level 4 (external tracker); review of the issue-triage request
-- [[design-system-research]] — what goes into a design system, tokens and DTCG 2025.10, building from an inventory, judging one, and handling subjective choices; research for WH-18
-- [[testing-practices-research]] — prior art for test suites: Google test sizes and scopes, flaky tests, test doubles, pyramid vs trophy, agent-written tests (2026); research for WH-10
-- [[codebase-audit-research]] — standards for auditing a codebase: IEEE 1028, ISO/IEC 25040/25010/5055, Symphony and 42010, SQALE, hotspots, OWASP, due diligence; how purpose changes an audit; research for WH-14
-- [[agentic-landscape]]
-- [[codebuff-trial-log]]
-- [[codebuff-source-links]]
-
-**Legacy architecture notes** (`reference/legacy-architecture/`). These are not items; they were reconciled into
-[[codebuff-orchestration|architecture/codebuff-orchestration]] in Phase 3 and are kept as source material:
-- [[shared-agent-architecture]]
-- [[claude-code-setup]]
-- [[antigravity-setup]]
-- [[dual-agent-workflow]]
-- [[multi-agent-setup-readme]]
-
-**Archive** (`_archive/`):
-- [[phase-0-findings]]
