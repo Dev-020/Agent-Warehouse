@@ -695,6 +695,20 @@ temp files; info), `missing-software`, `platform`. Exit 0 if only info, else 1.
 `[name, "--version"]` (timeout 5 s), first `\d+(\.\d+)+`; undeterminable → info "version unknown".
 Platforms: `win32→windows`, `linux→linux`, `darwin→macos`.
 
+### 4.9b `unreleased [<rev>]` (read-only, added 2026-11-13, WH-8)
+
+Lists the items whose content at `<rev>` (default `HEAD`) is not a release. Items are found in the tree of `<rev>`
+the same way `discover_working_tree` finds them on disk. For each item, its files at `<rev>`, minus those
+`sync_exclude` leaves out (tools always leave out `tests/**`), are compared by blob id with each of its release tags:
+- matches any release → `unchanged` (an older commit may hold an older release);
+- no tag → `unreleased`, "never released";
+- no tag that is an ancestor of `<rev>` → `unreleased`, "no release in this commit's history";
+- else `unreleased`, naming the newest ancestor release, whether the changelog has `[Unreleased]` entries, and the
+  changed files.
+
+`unreleased` is an exit-1 status. A `<rev>` that is not a commit is a usage error (exit 2). The pre-push hook runs
+this on every pushed branch tip (§4.14b).
+
 ### 4.10 `impact <id>`
 
 Scan all projects; table `Project | auto_sync | Pin | Installed | Source (manifest / required by X) | Next
@@ -812,14 +826,17 @@ post-commit hook, or a manual `warehouse sync`, covers that.
 
 ### 4.14b Hooks `_tools/hooks/pre-push` and `_tools/hooks/commit-msg` (added 2026-10-07)
 
-`pre-push` blocks the push (exit 1) when:
+`pre-push` (v2, 2026-11-13, WH-8) blocks the push (exit 1) when:
 1. `warehouse check --json` fails; or
-2. a pushed commit changes `architecture/`, `protocols/`, `conventions/`, `skills/`, `tools/` or `templates/`
-   and its subject does not start with `release: `. Item changes go through `warehouse release`.
+2. `warehouse unreleased <local sha>` (§4.9b) fails for a pushed branch tip: an item there is not a release. The
+   hook prints the item lines.
 
-Pushed commits come from the refs git passes on stdin: `<remote sha>..<local sha>` when the remote sha is known
-locally, else `<local sha> --not --remotes=<remote>`. Ref deletions are skipped. Python missing → skip (exit 0).
-`git push --no-verify` bypasses it.
+It checks what each pushed tip contains, not each pushed commit, so item work committed before its release, and a
+push of the whole history to an empty remote, pass once everything is released. Ref deletions and `refs/tags/*`
+pushes are skipped. Python missing → skip (exit 0). `git push --no-verify` bypasses it.
+
+v1 (2026-10-07) blocked every pushed commit that touched an item folder unless its subject started with
+`release: `, which blocked every normal push.
 
 `commit-msg` enforces `<type>(<scope>)?: <summary>` (types feat, fix, docs, style, refactor, perf, test, chore,
 release; summary starts lowercase, 2–73 chars). Skips merge/revert/fixup/squash commits and commits made with

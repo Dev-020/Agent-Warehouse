@@ -1,12 +1,10 @@
 #!/bin/sh
-# warehouse pre-push hook v1 — installed by `warehouse install-hook`
-# Blocks the push when `warehouse check` fails, or when a pushed commit changes item folders
-# without being a release commit (item changes go through `warehouse release`).
+# warehouse pre-push hook v2 — installed by `warehouse install-hook`
+# Blocks the push when `warehouse check` fails, or when a pushed branch tip holds an item whose
+# content is not a release (`warehouse unreleased <tip>`). How the tip got there does not matter.
 # Bypass with: git push --no-verify
 root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
-remote="$1"
 zero=0000000000000000000000000000000000000000
-items_re='^(architecture|protocols|conventions|skills|tools|templates)/'
 
 if command -v python >/dev/null 2>&1; then py=python
 elif command -v python3 >/dev/null 2>&1; then py=python3
@@ -24,33 +22,24 @@ if ! "$py" "$root/_tools/warehouse.py" check --json >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "  → Checking pushed commits for item changes outside release..."
+echo "  → Checking pushed branch tips for unreleased item changes..."
 bad=0
 # git passes one line per pushed ref: <local ref> <local sha> <remote ref> <remote sha>
 while read -r local_ref local_sha remote_ref remote_sha; do
-  [ "$local_sha" = "$zero" ] && continue  # ref deletion
-  if [ "$remote_sha" != "$zero" ] && git rev-parse -q --verify "$remote_sha^{commit}" >/dev/null; then
-    commits=$(git rev-list "$remote_sha..$local_sha")
-  else
-    # new ref on the remote: only commits the remote does not have yet
-    commits=$(git rev-list "$local_sha" --not --remotes="$remote")
+  [ "$local_sha" = "$zero" ] && continue        # ref deletion
+  case "$remote_ref" in refs/tags/*) continue ;; esac  # a tag is a release
+  if ! out=$("$py" "$root/_tools/warehouse.py" unreleased "$local_sha" 2>&1); then
+    echo "⚠️  $remote_ref ($(git rev-parse --short "$local_sha")) has items that are not released:"
+    printf '%s\n' "$out" | grep -E '^  (unreleased|error) ' | sed 's/^/  /'
+    printf '%s\n' "$out" | grep -qE '^  (unreleased|error) ' || printf '%s\n' "$out" | sed 's/^/    /'
+    bad=1
   fi
-  for c in $commits; do
-    subject=$(git log -1 --format=%s "$c")
-    case "$subject" in
-      "release: "*) continue ;;
-    esac
-    if git diff-tree --no-commit-id --name-only -r --root "$c" | grep -qE "$items_re"; then
-      echo "⚠️  Commit $(git rev-parse --short "$c") \"$subject\" modifies item files but is not a release commit."
-      bad=1
-    fi
-  done
 done
 
 if [ "$bad" -eq 1 ]; then
   echo ""
-  echo "❌ Push blocked: Item files modified outside release process."
-  echo "   Fix: Use 'warehouse release <id> <major|minor|patch|initial>' instead."
+  echo "❌ Push blocked: item changes not released."
+  echo "   Fix: release them with 'warehouse release <id> <major|minor|patch|initial>'."
   echo "   Bypass with: git push --no-verify (not recommended)"
   exit 1
 fi

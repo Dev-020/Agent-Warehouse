@@ -8,7 +8,7 @@ import sys
 from . import TOOL_VERSION
 from .commands import (add, check, impact, index_cmd, install_hook, pull, registry_cmd, release,
                        remove, status, sync, promote, discard, detach, template, bootstrap, profile,
-                       request, issue, inbox_cmd)
+                       request, issue, inbox_cmd, unreleased)
 from .context import Context
 from .errors import WarehouseError
 
@@ -64,6 +64,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--message")
 
     cmd("check", check.run, "read-only health report")
+
+    p = cmd("unreleased", unreleased.run, "items whose content at a commit is not a release")
+    p.add_argument("rev", nargs="?", help="commit to inspect (default: HEAD)")
 
     p = cmd("impact", impact.run, "projects that use an item")
     p.add_argument("id")

@@ -257,32 +257,90 @@ def _run_hook(wh, name, *args, stdin="", env_extra=None):
     return cp.returncode, (cp.stdout + cp.stderr).decode("utf-8", "replace")
 
 
-def test_pre_push_blocks_item_commits_outside_release(wh):
+def _install_hooks(wh):
     if shutil.which("python") is None or shutil.which("sh") is None:
         pytest.skip("python or sh not on PATH for the hook shell")
     copy_tool_into(wh)
     wh.commit("tool")
     assert wh.run("install-hook")[0] == 0
-    wh.write_item(DOC, "1.0.0", record="#### Added\n- First release.")
-    wh.commit("add item")
+
+
+def _push(wh, remote_sha, ref="refs/heads/main"):
+    head = git(wh.root, "rev-parse", "HEAD").strip()
+    return _run_hook(wh, "pre-push", "origin", "url", stdin=f"{ref} {head} {ref} {remote_sha}\n")
+
+
+def test_pre_push_checks_the_tip_not_each_commit(wh):
+    _install_hooks(wh)
     base = git(wh.root, "rev-parse", "HEAD").strip()
+    wh.write_item(DOC, "1.0.0", record="#### Added\n- First release.")
+    wh.commit("feat: draft the session log")  # item work committed before its release
     assert wh.run("release", DOC, "initial", "--no-sync")[0] == 0
 
-    def push_line():
-        head = git(wh.root, "rev-parse", "HEAD").strip()
-        return f"refs/heads/main {head} refs/heads/main {base}\n"
-
-    code, out = _run_hook(wh, "pre-push", "origin", "url", stdin=push_line())
-    assert code == 0 and "validation passed" in out, out  # the release commit is allowed
+    code, out = _push(wh, base)
+    assert code == 0 and "validation passed" in out, out
+    code, out = _push(wh, "0" * 40)  # empty remote (a recreated repo): the whole history is pushed
+    assert code == 0 and "validation passed" in out, out
 
     wh.write_item("protocol/new-draft", "0.1.0", unreleased="- First draft.")
     wh.commit("chore: add a draft protocol")
-    code, out = _run_hook(wh, "pre-push", "origin", "url", stdin=push_line())
-    assert code == 1 and '"chore: add a draft protocol" modifies item files' in out, out
-    assert "release: " + DOC not in out
+    code, out = _push(wh, base)
+    assert code == 1 and "protocol/new-draft" in out and "never released" in out, out
+    assert DOC not in out
 
     deletion = f"(delete) {'0' * 40} refs/heads/old {base}\n"
     assert _run_hook(wh, "pre-push", "origin", "url", stdin=deletion)[0] == 0
+    code, out = _push(wh, base, ref="refs/tags/protocol/new-draft@0.1.0")  # a tag push is not checked
+    assert code == 0, out
+
+
+def test_pre_push_blocks_a_released_item_changed_since_its_release(wh):
+    _install_hooks(wh)
+    base = git(wh.root, "rev-parse", "HEAD").strip()
+    wh.write_item(DOC, "1.0.0", record="#### Added\n- First release.")
+    wh.commit("feat: add the session log")
+    assert wh.run("release", DOC, "initial", "--no-sync")[0] == 0
+    wh.write_item(DOC, "1.0.0", body="Changed body.\n", unreleased="- Changed the body.")
+    wh.commit("feat: change the session log")
+    code, out = _push(wh, base)
+    assert code == 1 and DOC in out and "differs from 1.0.0" in out and "[Unreleased]" in out, out
+
+
+def test_pre_push_allows_unsynced_tool_test_changes(wh):
+    _install_hooks(wh)
+    base = git(wh.root, "rev-parse", "HEAD").strip()
+    tool = "tool/demo"
+    wh.write_item(tool, "0.1.0", record="### Added\n- First release.", files={"tests/test_demo.py": "def test_ok():\n    assert True\n"})
+    wh.commit("feat: add the demo tool")
+    assert wh.run("release", tool, "initial", "--no-sync")[0] == 0
+
+    wh.write_item(tool, "0.1.0", files={"tests/test_demo.py": "def test_ok():\n    assert 1 == 1\n"})
+    wh.commit("test: reword the demo test")
+    code, out = _push(wh, base)
+    assert code == 0 and "validation passed" in out, out  # tests/ never syncs, so no release is needed
+
+    wh.write_item(tool, "0.1.0", files={"main.py": "print('changed')\n", "tests/test_demo.py": "def test_ok():\n    assert 1 == 1\n"})
+    wh.commit("fix: change the demo tool")
+    code, out = _push(wh, base)
+    assert code == 1 and tool in out and "main.py" in out, out
+
+
+def test_unreleased_accepts_an_older_release_at_an_older_commit(wh):
+    wh.write_item(DOC, "1.0.0", record="#### Added\n- First release.")
+    wh.commit("feat: add the session log")
+    assert wh.run("release", DOC, "initial", "--no-sync")[0] == 0
+    first = git(wh.root, "rev-parse", "HEAD").strip()
+    wh.write_item(DOC, "1.0.0", body="Changed body.\n", unreleased="- Changed the body.")
+    wh.commit("feat: change the session log")
+    middle = git(wh.root, "rev-parse", "HEAD").strip()
+    assert wh.run("release", DOC, "patch", "--no-sync")[0] == 0
+
+    assert wh.run("unreleased")[0] == 0
+    code, out = wh.run("unreleased", first)  # holds 1.0.0, older than the newest release
+    assert code == 0, out
+    code, out = wh.run("unreleased", middle)
+    assert code == 1 and "differs from 1.0.0" in out, out
+    assert wh.run("unreleased", "no-such-rev")[0] == 2
 
 
 def test_commit_msg_hook_enforces_conventional_commits(wh):
