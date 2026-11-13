@@ -144,8 +144,8 @@ changes every use.
 - A token name is never reused for a different meaning. Retire it instead (§10).
 
 ### 5.3 Categories
-Colour, typography (family, size, weight, line height), spacing, radius, elevation (shadow), border
-width, breakpoints, motion (duration, easing), opacity and z-order. A project defines only the
+Colour, typography (family, size, weight, line height), spacing, radius, elevation (shadow), border  
+width, breakpoints, motion (duration, easing), opacity and z-order. A project defines only the  
 categories it uses.
 
 ### 5.4 The token file (optional)
