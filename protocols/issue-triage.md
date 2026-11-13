@@ -98,11 +98,12 @@ Report findings to the user in one table:
 | A confirmation is offered for an action that is then correctly refused | Minor, Rare | Task, P3 |
 | A preview's escaping misses a contrived input that needs hostile content and a click, in a single-user app | Minor, Improbable | Task, P3, or the register if no fix is planned |
 
-The case this example comes from is written up in [[shadow-cursor-063-triage]].
-
 ## Changelog
 
 ### [Unreleased]
+
+#### Removed
+- The link to the case study behind the example; the case study is no longer published.
 
 ### [0.1.0] - 2026-10-09
 #### Added
