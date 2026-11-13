@@ -165,5 +165,7 @@ subsystem only, using the agreed id rules and the shared measures. The orchestra
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.0] - 2026-11-13
 #### Added
 - First draft.
