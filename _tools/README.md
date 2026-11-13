@@ -51,6 +51,7 @@ See [[cli-reference]] in `docs/` for the complete reference guide and option bre
 | `add <id>[@pin] [--major]` / `remove <id> [--prune] [--force]` | 1 | built |
 | `release <id> <major\|minor\|patch\|initial> [--no-sync]` | 1 | built |
 | `check`, `impact <id>`, `registry`, `index` | 1 | built |
+| `unreleased [<rev>]` | 1 | built (WH-8) |
 | `install-hook [--force]` | 1 | built |
 | `promote`, `discard`, `detach`, `template`, `bootstrap` | 2 | built |
 | `profile <list\|show\|save\|delete\|apply>` | 2+ | built |

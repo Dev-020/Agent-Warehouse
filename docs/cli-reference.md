@@ -19,6 +19,7 @@ Complete reference for `warehouse.py` (`warehouse` / `warehouse.cmd`), the tool 
 | [`profile`](#profile) | Profiles / Loadouts | List, view, create, delete, and apply progressive disclosure profiles. |
 | [`release`](#release) | Warehouse Release | Release a new version of an item: bump version, tag, commit, and auto-sync. |
 | [`check`](#check) | Vault Governance | Read-only health check across all registered projects and lock integrity. |
+| [`unreleased`](#unreleased) | Vault Governance | List items whose content at a commit is not a release (used by the pre-push hook). |
 | [`impact`](#impact) | Vault Governance | Show which projects depend on a specific item and their pin constraints. |
 | [`registry`](#registry) | Vault Governance | Scan workspace roots and regenerate `_registry/projects.md`. |
 | [`index`](#index) | Vault Governance | Scan catalog items and regenerate the catalog index in `00_INDEX.md`. |
@@ -349,6 +350,27 @@ warehouse check [--json]
 **Examples:**
 ```bash
 python <warehouse>/_tools/warehouse.py check
+```
+
+---
+
+### `unreleased`
+Lists the items whose content at a commit is not a release. The pre-push hook runs it on every pushed branch tip.
+
+**Syntax:**
+```bash
+warehouse unreleased [<REV>] [--json] [--verbose]
+```
+
+- `<REV>`: the commit to inspect (default `HEAD`).
+- An item passes when its files match any of its releases. Files that never sync (`sync_exclude`, and a tool's `tests/`) are ignored.
+- Exit 1 when any item is unreleased: never released, no release in the commit's history, or changed since its newest release there.
+- `--verbose` also lists the items that match a release.
+
+**Examples:**
+```bash
+python <warehouse>/_tools/warehouse.py unreleased
+python <warehouse>/_tools/warehouse.py unreleased origin/main
 ```
 
 ---
