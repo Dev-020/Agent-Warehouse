@@ -199,5 +199,7 @@ F1 covers D1 too: they share one cause, so D1 has no finding of its own (step 6)
 ## Changelog
 
 ### [Unreleased]
+
+### [0.1.0] - 2026-11-13
 #### Added
 - First draft.
